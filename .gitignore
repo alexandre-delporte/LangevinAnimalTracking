@@ -1,0 +1,21 @@
+# R build artifacts
+.Rhistory
+.RData
+.Ruserdata
+
+# Compiled objects
+*.o
+*.so
+*.dll
+
+# R CMD build / check
+*.tar.gz
+*.Rcheck/
+
+# pkgdown
+docs/
+_site/
+
+# Temporary files
+*~
+*.swp

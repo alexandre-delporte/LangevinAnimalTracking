@@ -1,0 +1,34 @@
+Package: LangevinAnimalTracking
+Type: Package
+Title: Filtering and Inference for Penalized Langevin Animal Movement Models
+Version: 0.1.0
+Authors@R: c(
+    person("Alexandre", "Delporte", email = "alexandre.delporte@univ-grenoble-alpes.fr", 
+           role = c("aut", "cre")),
+    person("Susanne", "Ditlevsen", role = "aut"),
+    person("Adeline", "Samson", role = "aut")
+    )
+Description: Implements filtering algorithms for animal movement trajectories.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Depends: 
+    R (>= 4.0.0)
+LinkingTo: 
+    Rcpp,                     
+    RcppArmadillo             
+Imports:                  
+    expm,
+    MASS,
+    mvtnorm,
+    sp,
+    stats,
+    parallel,
+    ggplot2,
+    doParallel,
+    foreach
+Suggests:
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown
+RoxygenNote: 7.3.3

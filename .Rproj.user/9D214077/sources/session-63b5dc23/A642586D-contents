@@ -1,0 +1,67 @@
+
+
+test_that("RACVM analytical derivatives match finite differences", {
+  
+  h <- 0.1
+  tau <- 1.0
+  nu <- 0.5
+  omega <- 3
+  epsilon <- 1e-7
+  
+  Q_analytical <- dRACVM_cov(tau, nu, omega, h)
+  T_analytical <- dRACVM_link(tau, omega, h)
+  
+  # dQ/dtau
+  dQ_dtau_num <- (RACVM_cov(tau + epsilon, nu, omega, h) -
+                    RACVM_cov(tau - epsilon, nu, omega, h)) / (2 * epsilon)
+  
+  expect_lt(max(abs(Q_analytical$tau - dQ_dtau_num)), 1e-5)
+  
+  # dQ/dnu
+  dQ_dnu_num <- (RACVM_cov(tau, nu + epsilon, omega, h) -
+                   RACVM_cov(tau, nu - epsilon, omega, h)) / (2 * epsilon)
+  
+  expect_lt(max(abs(Q_analytical$nu - dQ_dnu_num)), 1e-5)
+  
+  # dQ/domega
+  dQ_domega_num <- (RACVM_cov(tau, nu, omega + epsilon, h) -
+                      RACVM_cov(tau, nu, omega - epsilon, h)) / (2 * epsilon)
+  
+  expect_lt(max(abs(Q_analytical$omega - dQ_domega_num)), 1e-5)
+  
+  # dT/dtau
+  dT_dtau_num <- (RACVM_link(tau + epsilon, omega, h)-
+               RACVM_link(tau - epsilon, omega, h)) / (2 * epsilon)
+  
+  expect_lt(max(abs(T_analytical$tau - dT_dtau_num)), 1e-5)
+  
+  # dT/domega
+  dT_domega_numerical <- (RACVM_link(tau, omega + epsilon, h) -
+                            RACVM_link(tau, omega - epsilon, h)) / (2 * epsilon)
+  expect_lt(max(abs(T_analytical$omega - dT_domega_num)), 1e-5)
+  
+})
+
+
+for (d in c(1, 2, 5, 10)) {
+  
+  cat("Dimension:", d, "\n")
+  
+  # Generate a valid covariance matrix
+  A <- matrix(rnorm(d * d), d, d)
+  Sigma <- crossprod(A) + diag(d)
+  cholSigma <- chol(Sigma)
+  
+  x <- rnorm(d)
+  mean <- rnorm(d)
+  
+  ref <- dmvnorm(x, mean, crossprod(cholSigma), log = TRUE)
+  r_val <- log_dmvnorm_chol(x, mean, cholSigma)
+  cpp_val <- log_dmvnorm_chol_cpp(x, mean, cholSigma)
+  
+  cat("  dmvnorm :", ref, "\n")
+  cat("  R       :", r_val, "\n")
+  cat("  C++     :", cpp_val, "\n")
+  cat("  R - ref :", r_val - ref, "\n")
+  cat("  C++-ref :", cpp_val - ref, "\n\n")
+}

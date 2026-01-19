@@ -1,0 +1,26 @@
+{
+    "args": [
+        "-std=gnu++17",
+        "-I/usr/share/R/include",
+        "-DNDEBUG",
+        "-fpic",
+        "-ffile-prefix-map=/build/r-base-JpkSDg/r-base-4.4.3=.",
+        "-fstack-protector-strong",
+        "-D_FORTIFY_SOURCE=2",
+        "-DEIGEN_DONT_VECTORIZE",
+        "-I/usr/lib/llvm-14/lib/clang/14.0.0/include",
+        "-I/usr/include/c++/11",
+        "-I/usr/include/x86_64-linux-gnu/c++/11",
+        "-I/usr/include/c++/11/backward",
+        "-I/usr/lib/gcc/x86_64-linux-gnu/11/include",
+        "-I/usr/local/include",
+        "-I/usr/include/x86_64-linux-gnu",
+        "-I/usr/include"
+    ],
+    "pch": "",
+    "is_cpp": true,
+    "hash": "1768810699",
+    "compiler": "10847413883325264758",
+    "rversion": "4.4.3",
+    "dbversion": 4
+}

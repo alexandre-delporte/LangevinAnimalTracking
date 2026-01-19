@@ -1,0 +1,26 @@
+{
+    "id": "1875E77A",
+    "path": "~/Documents/Research/Projects/LangevinAnimalTracking/R/llk_gradient.R",
+    "project_path": "R/llk_gradient.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1768812494340.0,
+    "source_on_save": false,
+    "relative_order": 4,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "174,10",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1768812633,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1768812633443,
+    "read_only": false,
+    "read_only_alternatives": []
+}

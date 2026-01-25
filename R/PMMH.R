@@ -27,18 +27,21 @@
 #' - posterior_sd: posterior standard deviation estimates for each parameter
 #' - posterior_quantiles: posterior quantiles (2.5%, 25%, 50%, 75%, 97.5%) for each parameter
 #' - effective_sample_size: effective sample size for each parameter
-#'  @export
 #'
 #' @importFrom MASS mvrnorm
-#'
+#' @export
+
 PMMH_langevin <- function(data, theta_init, num_iterations, num_particles,
                           potential_params = NULL,
                           error_params, error_dist,
                           polygon, U0, lambda,
-                          proposal_cov = NULL,
-                          prior_log_density = NULL,
-                          adapt_proposal = TRUE,
-                          burnin = 2000,fixpar=NULL,
+                          prior_tau, prior_nu, prior_omega,
+                          fixpar = NULL,
+                          # AM-specific parameters
+                          initial_cov = NULL,
+                          t0 = 100,  # Initial period length
+                          epsilon = 1e-5,  # Small constant for regularization
+                          sd_scaling = NULL,  # Will use (2.4)^2/d by default
                           verbose = TRUE) {
   
   p <- length(theta_init)
@@ -47,28 +50,56 @@ PMMH_langevin <- function(data, theta_init, num_iterations, num_particles,
   freepar <- setdiff(param_names, fixpar)
   p_free <- length(freepar)
   
-  # Store markov chain
+  # Set default scaling parameter (Gelman et al. 1996)
+  if (is.null(sd_scaling)) {
+    sd_scaling <- (2.4)^2 / p_free
+  }
+  
+  # Initialize proposal covariance
+  if (is.null(initial_cov)) {
+    # Default: diagonal matrix with reasonable initial variances
+    initial_cov <- diag(c(tau = 0.1, nu = 0.1, omega = 0.1)[freepar])
+  }
+  
+  # Storage
+  theta_init<-unlist(theta_init)
   theta_chain <- matrix(0, nrow = num_iterations, ncol = p)
   colnames(theta_chain) <- param_names
-  theta_chain[1, ] <- unlist(theta_init)
+  theta_chain[1, ] <- theta_init
   
   log_lik_chain <- numeric(num_iterations)
   accept_count <- 0
   
-  # Default proposal covariance (random walk on log scale)
-  if (is.null(proposal_cov)) {
-    proposal_sd <- c(tau = 0.2, nu = 0.05, omega = 0.1)
-    proposal_sd <- proposal_sd[freepar]
-    proposal_cov <- diag(proposal_sd^2)
-  }
+  # Transformed parameters
+  theta_transformed_chain <- matrix(0, nrow = num_iterations, ncol = p_free)
+  colnames(theta_transformed_chain) <- freepar
   
-  # Prior uniform on log scale
-  if (is.null(prior_log_density)) {
-    prior_log_density <- function(theta) {
-      # Uniform prior for scale parameters: p(theta) propto 1/theta
-      if (any(theta <= 0)) return(-Inf)
-      return(-sum(log(theta)))
-    }
+  # Transform initial parameters
+  theta_trans <- numeric(p_free)
+  names(theta_trans) <- freepar
+  if ("tau" %in% freepar) theta_trans["tau"] <- log(theta_init["tau"])
+  if ("nu" %in% freepar) theta_trans["nu"] <- log(theta_init["nu"])
+  if ("omega" %in% freepar) theta_trans["omega"] <- theta_init["omega"]
+  theta_transformed_chain[1, ] <- theta_trans
+  
+  # Current proposal covariance
+  C_t <- initial_cov
+  
+  # Running sum for efficient covariance computation
+  sum_theta <- theta_trans
+  sum_theta_sq <- outer(theta_trans, theta_trans)
+  
+  # Log normal prior
+  prior_log_ratio <- function(theta, theta_new) {
+    if (theta["tau"] <= 0 || theta["nu"] <= 0) return(-Inf)
+    
+    log_tau_ratio <- -((log(theta_new["tau"]) - log(prior_tau$mean))^2 - 
+                         (log(theta["tau"]) - log(prior_tau$mean))^2) / (2 * prior_tau$sd^2)
+    log_nu_ratio <- -((log(theta_new["nu"]) - log(prior_nu$mean))^2 - 
+                        (log(theta["nu"]) - log(prior_nu$mean))^2) / (2 * prior_nu$sd^2)
+    log_omega_ratio <- -(theta_new["omega"]^2 - theta["omega"]^2) / (2 * prior_omega$sd^2)
+    
+    return(log_tau_ratio + log_nu_ratio + log_omega_ratio)
   }
   
   # Run initial particle filter
@@ -90,17 +121,16 @@ PMMH_langevin <- function(data, theta_init, num_iterations, num_particles,
   
   log_lik_current <- pf_init$loglik
   log_lik_chain[1] <- log_lik_current
-  log_prior_current <- prior_log_density(theta_init[freepar])
-  
   
   if (verbose) {
     cat("Initial log-likelihood:", log_lik_current, "\n")
-    cat("Initial log-prior:", log_prior_current, "\n")
+    cat("Using Adaptive Metropolis with sd_scaling =", sd_scaling, "\n")
+    cat("Initial period: iterations 1 to", t0, "\n")
   }
   
   # MCMC loop
   for (iter in 2:num_iterations) {
-    if (verbose && iter %% 10 == 0) {
+    if (verbose && iter %% 100 == 0) {
       cat("\n========================================\n")
       cat("PMMH iteration", iter, "/", num_iterations, "\n")
       cat("  Current theta:", round(theta_chain[iter-1, ], 4), "\n")
@@ -109,38 +139,62 @@ PMMH_langevin <- function(data, theta_init, num_iterations, num_particles,
     }
     
     theta_current <- theta_chain[iter - 1, ]
+    theta_trans_current <- theta_transformed_chain[iter - 1, ]
     
-    theta_free_current <- theta_current[freepar]
-    theta_log_free_current <- log(theta_free_current)
+    # Update proposal covariance using Adaptive Metropolis
+    if (iter > t0) {
+      # Compute empirical covariance from all previous samples
+      mean_theta <- sum_theta / (iter - 1)
+      
+      # Empirical covariance: E[XX^T] - E[X]E[X]^T
+      emp_cov <- (sum_theta_sq / (iter - 1)) - outer(mean_theta, mean_theta)
+      
+      # Apply AM formula: C_t = s_d * Cov + s_d * epsilon * I
+      C_t <- sd_scaling * emp_cov + sd_scaling * epsilon * diag(p_free)
+      
+      if (verbose && iter %% 500 == 0) {
+        cat("  Updated proposal covariance (diag):", round(diag(C_t), 6), "\n")
+      }
+    }
     
+    # Propose new parameters from multivariate normal
+    # Use Cholesky decomposition for sampling
+    L <- tryCatch(chol(C_t), error = function(e) NULL)
     
-    # Propose new parameters 
+    if (is.null(L)) {
+      # Fallback if covariance is not positive definite
+      if (verbose) cat("  Warning: Proposal covariance not positive definite, using diagonal\n")
+      L <- diag(sqrt(pmax(diag(C_t), epsilon)))
+    }
     
-    theta_log_free_prop <- theta_log_free_current +
-      mvrnorm(1, mu = rep(0, p_free), Sigma = proposal_cov)
+    # Sample from N(theta_current, C_t) in transformed space
+    z <- rnorm(p_free)
+    theta_trans_prop <- theta_trans_current + as.vector(t(L) %*% z)
+    names(theta_trans_prop) <- freepar
     
-    theta_free_prop <- exp(theta_log_free_prop)
-    
+    # Transform back to original space
     theta_prop <- theta_current
-    theta_prop[freepar] <- theta_free_prop
-    names(theta_prop) <- param_names
+    if ("tau" %in% freepar) theta_prop["tau"] <- exp(theta_trans_prop["tau"])
+    if ("nu" %in% freepar) theta_prop["nu"] <- exp(theta_trans_prop["nu"])
+    if ("omega" %in% freepar) theta_prop["omega"] <- theta_trans_prop["omega"]
     
-    
-    if (verbose && iter %% 10 == 0) {
+    if (verbose && iter %% 100 == 0) {
       cat("  Proposed theta:", round(theta_prop, 4), "\n")
     }
     
     # Check for invalid proposals
-    if (any(theta_prop <= 0) || any(is.na(theta_prop)) || any(is.infinite(theta_prop))) {
-      if (verbose && iter %% 10 == 0) {
+    if (theta_prop["tau"] <= 0 || theta_prop["nu"] <= 0 || 
+        any(is.na(theta_prop)) || any(is.infinite(theta_prop))) {
+      if (verbose && iter %% 100 == 0) {
         cat("  REJECTED (invalid proposal)\n")
       }
       theta_chain[iter, ] <- theta_current
+      theta_transformed_chain[iter, ] <- theta_trans_current
       log_lik_chain[iter] <- log_lik_current
       next
     }
     
-    # run particle filter with proposed parameters
+    # Run particle filter with proposed parameters
     pf_prop <- tryCatch({
       particle_filter2D(
         data = data,
@@ -162,30 +216,23 @@ PMMH_langevin <- function(data, theta_init, num_iterations, num_particles,
     })
     
     if (is.null(pf_prop)) {
-      # reject if error in particlefilter 
       theta_chain[iter, ] <- theta_current
+      theta_transformed_chain[iter, ] <- theta_trans_current
       log_lik_chain[iter] <- log_lik_current
       next
     }
     
     log_lik_prop <- pf_prop$loglik
     
-    if (verbose && iter %% 10 == 0) {
+    if (verbose && iter %% 100 == 0) {
       cat("  Proposed log-lik:", round(log_lik_prop, 2), "\n")
     }
     
+    # Acceptance probability (no Jacobian needed - proposal is symmetric in transformed space)
+    log_alpha <- (log_lik_prop - log_lik_current) + 
+      prior_log_ratio(theta_current, theta_prop)
     
-    log_prior_prop <- prior_log_density(theta_prop[freepar])
-    
-    log_jacobian <- sum(theta_log_free_prop - theta_log_free_current)
-    
-    
-    # acceptance probability
-    log_alpha <- (log_lik_prop + log_prior_prop) - 
-      (log_lik_current + log_prior_current) +
-      log_jacobian
-    
-    if (verbose && iter %% 10 == 0) {
+    if (verbose && iter %% 100 == 0) {
       cat("  Log acceptance prob:", round(log_alpha, 4), "\n")
     }
     
@@ -197,8 +244,7 @@ PMMH_langevin <- function(data, theta_init, num_iterations, num_particles,
     } else {
       u <- runif(1)
       accept <- (log(u) < log_alpha)
-      if (verbose && iter %% 10 == 0) {
-        cat("  u =", round(u, 4), ", log(u) =", round(log(u), 4), "\n")
+      if (verbose && iter %% 100 == 0) {
         if (accept) {
           cat("  *** ACCEPTED ***\n")
         } else {
@@ -209,48 +255,46 @@ PMMH_langevin <- function(data, theta_init, num_iterations, num_particles,
     
     if (accept) {
       theta_chain[iter, ] <- theta_prop
+      theta_transformed_chain[iter, ] <- theta_trans_prop
       log_lik_current <- log_lik_prop
-      log_prior_current <- log_prior_prop
       accept_count <- accept_count + 1
     } else {
       theta_chain[iter, ] <- theta_current
+      theta_transformed_chain[iter, ] <- theta_trans_current
     }
     
     log_lik_chain[iter] <- log_lik_current
     
-    # Adapt proposal covariance during burn-in
-    if (adapt_proposal && iter <= burnin && iter %% 10 == 0) {
-      accept_rate <- accept_count / iter
-      
-      # Target acceptance rate between 0.15 and 0.4 
-      if (accept_rate < 0.15) {
-        proposal_cov <- proposal_cov * 0.8
-        if (verbose) cat("\n  >>> Decreasing proposal variance (accept rate =", 
-                         round(accept_rate, 3), ")\n")
-      } else if (accept_rate > 0.4) {
-        proposal_cov <- proposal_cov * 1.2
-        if (verbose) cat("\n  >>> Increasing proposal variance (accept rate =", 
-                         round(accept_rate, 3), ")\n")
-      }
-      
-      
-    }
+    # Update running sums for covariance computation
+    theta_trans_accepted <- theta_transformed_chain[iter, ]
+    sum_theta <- sum_theta + theta_trans_accepted
+    sum_theta_sq <- sum_theta_sq + outer(theta_trans_accepted, theta_trans_accepted)
   }
   
   # Post-processing
+  burnin <- max(t0, round(num_iterations * 0.2))  # Use at least t0 as burnin
   post_burnin <- theta_chain[(burnin+1):num_iterations, ]
-
+  
+  if (verbose) {
+    cat("\n========================================\n")
+    cat("MCMC complete!\n")
+    cat("Final acceptance rate:", round(accept_count / num_iterations, 3), "\n")
+    cat("Burnin period:", burnin, "iterations\n")
+    cat("Posterior samples:", nrow(post_burnin), "\n")
+  }
   
   return(list(
     theta = theta_chain,
+    theta_transformed = theta_transformed_chain,
     log_likelihood = log_lik_chain,
     acceptance_rate = accept_count / num_iterations,
-    proposal_cov = proposal_cov,
+    proposal_cov=C_t,
     posterior_samples = post_burnin,
     posterior_mean = colMeans(post_burnin),
     posterior_sd = apply(post_burnin, 2, sd),
     posterior_quantiles = apply(post_burnin, 2, quantile, 
                                 probs = c(0.025, 0.25, 0.5, 0.75, 0.975)),
-    burnin = burnin
+    burnin = burnin,
+    final_proposal_cov = C_t
   ))
 }

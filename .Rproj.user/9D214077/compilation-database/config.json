@@ -7,6 +7,8 @@
         "-ffile-prefix-map=/build/r-base-JpkSDg/r-base-4.4.3=.",
         "-fstack-protector-strong",
         "-D_FORTIFY_SOURCE=2",
+        "-I/home/delporta/R/x86_64-pc-linux-gnu-library/4.4/Rcpp/include",
+        "-I/home/delporta/R/x86_64-pc-linux-gnu-library/4.4/RcppArmadillo/include",
         "-DEIGEN_DONT_VECTORIZE",
         "-I/usr/lib/llvm-14/lib/clang/14.0.0/include",
         "-I/usr/include/c++/11",
@@ -17,10 +19,10 @@
         "-I/usr/include/x86_64-linux-gnu",
         "-I/usr/include"
     ],
-    "pch": "",
+    "pch": "RcppArmadillo",
     "is_cpp": true,
-    "hash": "1768810699",
-    "compiler": "10847413883325264758",
+    "hash": "1768821764",
+    "compiler": "6247981364537157182",
     "rversion": "4.4.3",
     "dbversion": 4
 }

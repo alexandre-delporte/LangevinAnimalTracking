@@ -151,6 +151,7 @@ closest_point_on_boundary <- function(x, polygon,grad=TRUE) {
 #' @param x Numeric vector of length 2: coordinates of the point
 #' @param polygon SpatialPolygon object representing the polygon
 #' @return logical: TRUE if the point is inside or on the edge, FALSE otherwise
+#' @importFrom sp point.in.polygon
 is_point_inside_polygon <- function(x, polygon) {
   coords <- polygon@coords
   status <- point.in.polygon(x[1], x[2], coords[, 1], coords[, 2])
@@ -320,6 +321,7 @@ choose_center <- function(x, x_star, params) {
 #' @param true matrix of true positions (n x 2)
 #' @param filtered matrix of filtered positions (n x 2)
 #' @return RMSE value (numeric)
+#' @export
 rmse=function(true,filtered) {
   
   return (mean((sqrt((true[,1]-filtered[,1])^2+(true[,2]-filtered[,2])^2))))
@@ -329,6 +331,7 @@ rmse=function(true,filtered) {
 #' @param true matrix of true positions (n x 2)
 #' @param filtered matrix of filtered positions (n x 2)
 #' @return max error value (numeric)
+#' @export
 max_error=function(true,filtered) {
   
   return (max((sqrt((true[,1]-filtered[,1])^2+(true[,2]-filtered[,2])^2))))

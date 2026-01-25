@@ -1,5 +1,11 @@
 [
     {
+        "file": "/home/delporta/Documents/Research/Projects/LangevinAnimalTracking/src/LangevinAnimalTracking_package.cpp",
+        "file_last_write": 1768826880.0,
+        "definitions": [],
+        "hidden": false
+    },
+    {
         "file": "/home/delporta/Documents/Research/Projects/LangevinAnimalTracking/src/utility.cpp",
         "file_last_write": 1767968849.0,
         "definitions": [

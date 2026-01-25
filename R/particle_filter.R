@@ -495,7 +495,6 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
         "pred_density =", exp(log_pred_density),
         "prop_density =", exp(log_prop_density), "\n")
   }
-  if( exp(log_pred_density)==0) stop("Pred density is zero")
   exp(log_weight)
 }
 
@@ -570,6 +569,7 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
   weights <- matrix(0, nrow = num_particles, ncol = N)
   total_weights <- numeric(N)  # store the total unnormalized weights
   loglik <- 0
+  loglik_vector <- numeric(N-1)
   push_array <- array(0, dim = c(num_particles, 2, N-1))
   
   # Track index of fixed points to use in splitting
@@ -624,16 +624,11 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
     # Prediction step
     if (verbose) cat("Prediction step...\n")
     
-    #Resample particles using current weights
-    resample_indices<-sample(1:num_particles, size = num_particles,
-                             replace=TRUE, prob = weights[,j])
-    
-    ancestors[, j] <- as.integer(resample_indices)
-    
+
     for (k in 1:num_particles) {
       
       # Get ancestor
-      U_prev <- particles[resample_indices[k], ,j]
+      U_prev <- particles[k, ,j]
       
       # Compute inward push
       push<-compute_push(U_prev[1:2],polygon,lambda)
@@ -687,7 +682,7 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
     for (k in 1:num_particles) {
       
       U_pred <- particles[k, , j + 1]  # predicted particle
-      U_prev<- particles[resample_indices[k], ,j] # previous particle
+      U_prev<- particles[k, ,j] # previous particle
       push<-push_array[k, ,j]  #inward push force
       ind_fixed_point<-if (split_around_fixed_point) ind_fixed_point_mat[k,j]
       else NULL  #ind of fixed point for splitting
@@ -707,6 +702,7 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
     total_weights[j + 1] <- sum(weights[, j + 1])
     
     loglik <- loglik + log(total_weights[j + 1]) - log(num_particles)
+    loglik_vector[j]<- log(total_weights[j + 1]) - log(num_particles)
     
     # Normalize weights
     weight_sum <- total_weights[j + 1]
@@ -722,6 +718,15 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
       particles[, , j + 1] <- mvrnorm(num_particles, mu = c(y,0,0), Sigma = R0)
       weights[,j+1]<-1/num_particles
     }
+    
+    # Resampling step
+     if (j < N - 1) {
+       resample_indices <- sample(1:num_particles, size = num_particles,
+                                  replace = TRUE, prob = weights[, j + 1])
+       particles[, , j + 1] <- particles[resample_indices, , j + 1]
+       ancestors[, j] <- resample_indices
+       weights[, j + 1] <- 1/num_particles 
+     }
   }
   
   if (verbose) cat("Particle filtering complete.\n")
@@ -729,6 +734,7 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
   # Return particles, weights, and total weights
   return(list(particles = particles, weights = weights, 
               total_weights = total_weights,loglik = loglik,
+              loglik_vector=loglik_vector,
               push=push_array,
               ind_fixed_point=ind_fixed_point_mat,
               ancestors=ancestors))

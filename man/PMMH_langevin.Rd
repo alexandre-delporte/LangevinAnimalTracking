@@ -65,8 +65,7 @@ PMMH_langevin(
  - posterior_mean: posterior mean estimates for each parameter
 - posterior_sd: posterior standard deviation estimates for each parameter
 - posterior_quantiles: posterior quantiles (2.5%, 25%, 50%, 75%, 97.5%) for each parameter
-- effective_sample_size: effective sample size for each parameter
- @export}
+- effective_sample_size: effective sample size for each parameter}
 }
 \description{
 Particle Marginal Metropolis-Hastings for penalised Langevin SDE . See Andrieu (2010)

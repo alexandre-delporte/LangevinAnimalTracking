@@ -201,7 +201,7 @@ solve_SDE<-function(U,delta,tau,nu,omega,potential_params=NULL,
 #' @export
 #' @importFrom MASS mvrnorm
 #' @importFrom foreach %dopar% foreach
-#' @importFrom parallel makeCluster stopCluster
+#' @importFrom parallel makeCluster stopCluster clusterExport clusterEvalQ
 #' @importFrom doParallel registerDoParallel
 #'
 #'
@@ -228,15 +228,11 @@ simulate_2D_trajectory <- function(n_sim,sde_params,
   cl <- makeCluster(ncores)
   doParallel::registerDoParallel(cl)
   
-  clusterEvalQ(cl, {
-    library(here)
-    source(here("src/packages.R"))
-    source(here("src/error_models.R"))
-    source(here("src/simulate.R"))
-    source(here("src/utility.R"))
-    Rcpp::sourceCpp(here("src/utility.cpp"))
-    
+  parallel::clusterEvalQ(cl, {
+    library(LangevinAnimalTracking)
   })
+  
+
   
   all_trajectories <- foreach(j = 1:n_sim, .combine=rbind) %dopar% {
     
@@ -325,6 +321,7 @@ simulate_2D_trajectory <- function(n_sim,sde_params,
   stopCluster(cl)
   return(all_trajectories)
 }
+
 
 #' Visualizes both true and observed animal movement trajectories 
 #' within a specified polygon boundary.

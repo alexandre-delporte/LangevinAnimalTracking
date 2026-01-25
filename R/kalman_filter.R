@@ -68,6 +68,9 @@ kalman_filter <- function(data,sde_params,potential_params=NULL,
   Gamma <- rbind(
     cbind(matrix(0,2,2), matrix(0,2,2)),
     cbind(matrix(0,2,2), 4*nu^2/pi/tau*diag(2)))
+  
+  loglik <- 0
+  loglik_vector <- numeric(n_steps-1)
     
   
   for (k in 2:n_steps) {
@@ -130,9 +133,16 @@ kalman_filter <- function(data,sde_params,potential_params=NULL,
     K <- R_pred %*% t(H) %*% solve(H %*% R_pred %*% t(H) + sigma_obs^2 * diag(2))
     U_hat[k, ] <- U_pred + K %*% (Y[k, ] - H %*% U_pred)
     R <- (diag(length(U0)) - K %*% H) %*% R_pred
+    
+  
+    loglik_vector[k-1] <- dmvnorm(Y[k,],mean=H%*%U_pred,
+                              sigma=H%*%R_pred%*%t(H)+sigma_obs^2*diag(2),
+                              log=TRUE)
+    
+    loglik <- loglik + loglik_vector[k-1]
   }
   
-  return(U_hat)
+  return(list(U=U_hat,loglik=loglik,loglik_vector=loglik_vector))
 }
 
 
@@ -195,14 +205,11 @@ extended_kalman_filter <- function(data,sde_params,potential_hessian,
   
   tau<-sde_params$tau;nu <- sde_params$nu;omega<-sde_params$omega
   
-  if (split_around_fixed_point) {
-    
-    alpha<-potential_params$alpha;B<-potential_params$B
-    x_star<-potential_params$x_star
-    Gamma <- rbind(
+  alpha<-potential_params$alpha;B<-potential_params$B
+  x_star<-potential_params$x_star
+  Gamma <- rbind(
       cbind(matrix(0,2,2), matrix(0,2,2)),
       cbind(matrix(0,2,2), 4*nu^2/pi/tau*diag(2)))
-  }
   
   for (k in 2:n_steps) {
     
@@ -270,7 +277,7 @@ extended_kalman_filter <- function(data,sde_params,potential_hessian,
       L<-RACVM_link(tau,omega,dt)
       Q<-RACVM_cov(tau,nu,omega,dt)
       
-      f_prev <- c(rep(0, 2),push+mix_gaussian_grad_cpp(X,x_star,list(B=B,alpha=alpha),
+      f_prev <- c(rep(0, 2),push+mix_gaussian_grad_cpp(X_prev,x_star,list(B=B,alpha=alpha),
                                                        exclude=integer(0)))
       
       F_prev <- rbind(

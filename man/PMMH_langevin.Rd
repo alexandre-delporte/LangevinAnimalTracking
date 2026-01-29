@@ -16,11 +16,15 @@ PMMH_langevin(
   polygon,
   U0,
   lambda,
-  proposal_cov = NULL,
-  prior_log_density = NULL,
-  adapt_proposal = TRUE,
-  burnin = 2000,
+  scheme = "Lie-Trotter",
+  prior_tau,
+  prior_nu,
+  prior_omega,
   fixpar = NULL,
+  initial_cov = NULL,
+  t0 = 100,
+  epsilon = 1e-05,
+  sd_scaling = NULL,
   verbose = TRUE
 )
 }
@@ -45,27 +49,36 @@ PMMH_langevin(
 
 \item{lambda}{penalty parameter for the inward push}
 
-\item{proposal_cov}{proposal covariance matrix for the random walk on log-scale}
+\item{scheme}{numerical scheme for SDE simulation ("Lie-Trotter" or "Strang")}
 
-\item{prior_log_density}{function to compute log-density of the prior distribution}
+\item{prior_tau}{log_normal prior parameters for tau (list with mean and sd on log scale)}
 
-\item{adapt_proposal}{logical. If TRUE, adapt the proposal covariance during burn-in}
+\item{prior_nu}{log_normal prior parameters for nu (list with mean and sd on log scale)}
 
-\item{burnin}{number of burn-in iterations}
+\item{prior_omega}{normal prior parameters for omega (list with mean and sd)}
 
 \item{fixpar}{character vector with names of parameters to keep fixed during the inference}
 
+\item{initial_cov}{initial proposal covariance matrix for the transformed parameters}
+
+\item{t0}{number of iterations before starting adaptation of the proposal covariance}
+
+\item{epsilon}{small constant to ensure positive definiteness in covariance adaptation}
+
+\item{sd_scaling}{scaling parameter for Adaptive Metropolis (default is (2.4)^2 / d)}
+
 \item{verbose}{logical. If TRUE, print information during the computation
 # @return A list with the following elements:
-#' - theta: matrix of parameter values at each iteration
-#' - log_likelihood: vector of log-likelihood values at each iteration
-#' - acceptance_rate: overall acceptance rate
-#' - proposal_cov: final proposal covariance matrix
-#' - posterior_samples: matrix of posterior samples after burn-in
- - posterior_mean: posterior mean estimates for each parameter
+- theta: matrix of parameter values at each iteration
+-theta_transformed: matrix of transformed parameter values at each iteration
+- log_likelihood: vector of log-likelihood values at each iteration
+- acceptance_rate: overall acceptance rate
+- posterior_samples: matrix of posterior samples after burn-in
+- posterior_mean: posterior mean estimates for each parameter
 - posterior_sd: posterior standard deviation estimates for each parameter
 - posterior_quantiles: posterior quantiles (2.5%, 25%, 50%, 75%, 97.5%) for each parameter
-- effective_sample_size: effective sample size for each parameter}
+- burnin: number of burn-in iterations
+- final_proposal_cov: final proposal covariance matrix used}
 }
 \description{
 Particle Marginal Metropolis-Hastings for penalised Langevin SDE . See Andrieu (2010)

@@ -16,6 +16,7 @@ particle_filter2D(
   num_particles,
   scheme = "Lie-Trotter",
   split_around_fixed_point = FALSE,
+  ESS_threshold = 0.5,
   verbose = FALSE
 )
 }

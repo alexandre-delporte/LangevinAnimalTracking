@@ -152,10 +152,13 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
     Q<-OU_solution$Q
     mean<-OU_solution$mean
     
-    invQxx<-solve(Q[1:2,1:2])
+    Qxx<-Q[1:2,1:2]
+    cholQxx <- chol_cpp(Qxx)
+    invQxx  <- chol2inv_cpp(cholQxx)
     
     # Precompute conditional covariance for velocity
     Q_v_cond_x <- Q[3:4,3:4] - Q[3:4,1:2] %*% invQxx %*% Q[1:2,3:4]
+    cholQ_v_cond_x <- chol_cpp(Q_v_cond_x)
     
     # Propagate position only
     if (error_dist == "scaled_t") {
@@ -211,7 +214,7 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
     # Propagate velocity
     m_v_cond_x <- mean[3:4] + Q[3:4,1:2] %*% invQxx %*% (X_next - mean[1:2]) -
       delta/2 * grad_term
-    V_next <- mvrnorm(1, m_v_cond_x, Q_v_cond_x)
+    V_next <- m_v_cond_x+cholQ_v_cond_x%*%rnorm(2)
     
     U_next <- matrix(c(X_next, V_next), ncol=1)
   }
@@ -540,7 +543,7 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
 particle_filter2D <- function(data,sde_params,potential_params=NULL,
                               error_params,error_dist="normal",
                               polygon,U0,lambda,num_particles,scheme="Lie-Trotter",
-                              split_around_fixed_point=FALSE,verbose=FALSE) {
+                              split_around_fixed_point=FALSE,ESS_threshold=0.5,verbose=FALSE) {
  
   #browser()
   cat("Running particle filter with params:", as.numeric(sde_params), "\n")
@@ -568,30 +571,40 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
   particles <- array(NA, dim = c(num_particles, length(U0), N))
   weights <- matrix(0, nrow = num_particles, ncol = N)
   total_weights <- numeric(N)  # store the total unnormalized weights
+  
+  #initialize log likelihood
   loglik <- 0
   loglik_vector <- numeric(N-1)
+  
+  #initialize array to store inward push values
   push_array <- array(0, dim = c(num_particles, 2, N-1))
+  
+  # track ESS and resampling
+  ess_history <- numeric(N)
+  resampled_at <- logical(N-1)
   
   # Track index of fixed points to use in splitting
   if (split_around_fixed_point) {
   ind_fixed_point_mat<-matrix(0,nrow=num_particles,ncol=N-1)
   } else { ind_fixed_point_mat<-NULL}
   
-  # Track ancestors in multinomial resampling
+  # Track ancestors in resampling
   ancestors <- matrix(0, nrow = num_particles, ncol = N-1)
   
   # Initialize particles with noise
   R0<- rbind(cbind(diag(0.1^2,2),matrix(0,2,2)),
                cbind(matrix(0,2,2),diag(0.5^2,2)))
   
-  particles[, , 1]<-matrix(mvrnorm(num_particles,U0,R0),
-                           ncol=length(U0),nrow=num_particles)
+  particles[, , 1]<-matrix(replicate(num_particles,
+                                        U0+sqrt(R0)%*%rnorm(length(U0))),
+                           ncol=length(U0),nrow=num_particles,byrow=TRUE)
   
   # Initialize equal weights
   weights[, 1] <- 1/num_particles
-  
-  # Store total weight before normalization
+
   total_weights[1] <- sum(weights[, 1])
+  ess_history[1] <- 1 / sum(weights[,1]^2)
+  
   
   if (verbose) cat("Initialization complete. Starting particle filtering...\n")
   
@@ -701,6 +714,8 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
     # Store total weight before normalization
     total_weights[j + 1] <- sum(weights[, j + 1])
     
+  
+    
     loglik <- loglik + log(total_weights[j + 1]) - log(num_particles)
     loglik_vector[j]<- log(total_weights[j + 1]) - log(num_particles)
     
@@ -709,20 +724,34 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
     
     if (weight_sum != 0) {
       weights[, j + 1] <- weights[, j + 1] / weight_sum
+      ess_history[j + 1] <- 1 / sum(weights[, j + 1]^2)
       if (verbose) cat("Correction step complete.\n")
       
     } else {
       warning("Sum of weights is zero at time step ", j + 1, ". Reinitializing particles...\n")
       
       # Reinitialize particles around the observed position
-      particles[, , j + 1] <- mvrnorm(num_particles, mu = c(y,0,0), Sigma = R0)
+      particles[, , j + 1] <- replicate(num_particles,c(y,0,0)+sqrt(R0)%*%rnorm(length(U0)))
       weights[,j+1]<-1/num_particles
+      ess_history[j + 1] <- 1 / sum(weights[, j + 1]^2)
     }
     
     # Resampling step
      if (j < N - 1) {
-       resample_indices <- sample(1:num_particles, size = num_particles,
-                                  replace = TRUE, prob = weights[, j + 1])
+       
+       ess_ratio <- ess_history[j+1] / num_particles
+       
+       if (ess_ratio < ESS_threshold) {
+         # Resample
+         resample_indices <- sample(1:num_particles, size = num_particles,
+                                    replace=TRUE, prob = weights[,j+1])
+         resampled_at[j] <- TRUE
+         if (verbose) cat("  Resampling (ESS ratio = ", round(ess_ratio, 3), ")\n")
+       } else {
+         resample_indices <- 1:num_particles
+         resampled_at[j] <- FALSE
+         if (verbose) cat("  No resampling (ESS ratio = ", round(ess_ratio, 3), ")\n")
+       }
        particles[, , j + 1] <- particles[resample_indices, , j + 1]
        ancestors[, j] <- resample_indices
        weights[, j + 1] <- 1/num_particles 
@@ -737,7 +766,8 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
               loglik_vector=loglik_vector,
               push=push_array,
               ind_fixed_point=ind_fixed_point_mat,
-              ancestors=ancestors))
+              ancestors=ancestors,resampled_at=resampled_at,
+         ess_history=ess_history))
 }
 
 

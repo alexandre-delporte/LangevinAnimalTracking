@@ -1,5 +1,8 @@
+
+#include "utility.h"
 #include <RcppArmadillo.h> 
 using namespace Rcpp;
+using namespace arma;
 
 // [[Rcpp::depends(RcppArmadillo)]]
 
@@ -24,71 +27,6 @@ arma::vec mix_gaussian_grad_cpp(const arma::vec& x,
         grad += 2.0 * alpha[j] * std::exp(-quad) * (B*diff);
     }
     return grad;
-}
-
-
-
-
-// [[Rcpp::export]]
-arma::vec solve_ODE_cpp(const arma::vec& U,
-                        double delta,
-                        const arma::vec& push,
-                        const List& potential_params,
-                        Nullable<int> ind_fixed_point = R_NilValue) {
-  
-  // --- extract position ---
-  arma::vec X = U.subvec(0,1); // first 2 elements
-
-  // --- extract potential parameters ---
-  arma::vec alpha = potential_params["alpha"];
-  List B_list = potential_params["B"];
-  arma::mat x_star = potential_params["x_star"];
-
-  arma::vec U_hat = U; 
-  
-  if (ind_fixed_point.isNotNull()) {
-    
-    int l = as<int>(ind_fixed_point) - 1; // convert 1-based R index to 0-based C++
-    
-    // extract B_l and alpha_l
-    arma::mat B_l = B_list[l];
-    double alpha_l = alpha[l];
-    arma::vec x_star_l = x_star.row(l).t();
-
-    // mahalanobis distance
-    arma::vec diff = X - x_star_l;
-    double quad = arma::dot(diff, B_l * diff);
-    double e_l = std::exp(-quad);
-
-    // gradient from mix_gaussian_grad_cpp excluding l
-    IntegerVector exclude = IntegerVector::create(l+1); // R-style index for mix_gaussian_grad_cpp
-    arma::vec grad = mix_gaussian_grad_cpp(X, x_star, potential_params, exclude);
-
-    // non-linear term
-    arma::vec gv = push + grad + 2.0 * alpha_l * (e_l - 1.0) * (B_l * diff);
-    
-    // Build a vector of zeros with same length as U
-    arma::vec tmp(U.n_elem, arma::fill::zeros);
-
-    // Assign push + potential_grad to positions 3 and 4 (0-based indices 2 and 3)
-    tmp.subvec(2, 3) = gv;
-    U_hat = U - delta * tmp;
-
-  } else {
-
-    // no fixed point
-    IntegerVector exclude; // empty
-    arma::vec potential_grad = mix_gaussian_grad_cpp(X, x_star, potential_params, exclude);
-    
-    // Build a vector of zeros with same length as U
-    arma::vec tmp(U.n_elem, arma::fill::zeros);
-
-    // Assign push + potential_grad to positions 3 and 4 (0-based indices 2 and 3)
-    tmp.subvec(2, 3) = push + potential_grad;
-    U_hat = U - delta * tmp;
-  }
-
-  return U_hat;
 }
 
 
@@ -120,30 +58,29 @@ List product_gaussian_cpp(const arma::mat& P1,
 	const arma::mat& P2,
   	const arma::vec& mean1,
    	const arma::vec& mean2, 
-   	const arma::mat& M) { 
+   	const arma::mat& M,
+   	double proposal_weight) { 
    
-// Sigma_inv = P1 + t(M) * P2 * M 
-arma::mat Sigma_inv = P1 + M.t() * P2 * M; 
+	arma::mat Sigma_inv =
+	    2*proposal_weight*P1 + 2*(1-proposal_weight)*M.t() * P2 * M;
 
-// Force symmetry 
-Sigma_inv = 0.5 * (Sigma_inv + Sigma_inv.t()); 
+	Sigma_inv = 0.5 * (Sigma_inv + Sigma_inv.t());
 
-// b = P1 * mean1 + t(M) * P2 * mean2
-arma::vec b = P1 * mean1 + M.t() * P2 * mean2; 
+	arma::vec b =
+	    2*proposal_weight * P1 * mean1 + 2*(1 - proposal_weight) * M.t() * P2 * mean2;
 
-// Cholesky decomposition (upper triangular) 
-arma::mat R = arma::chol(Sigma_inv); 
+	// Cholesky decomposition (upper triangular) 
+	arma::mat R = arma::chol(Sigma_inv); 
 
-// Solve Sigma_inv * m = b using Cholesky 
-arma::vec z = arma::solve(arma::trimatl(R.t()), b);
-arma::vec m = arma::solve(arma::trimatu(R), z); 
+	// Solve Sigma_inv * m = b using Cholesky 
+	arma::vec z = arma::solve(arma::trimatl(R.t()), b);
+	arma::vec m = arma::solve(arma::trimatu(R), z); 
 
-// Compute Cholesky of covariance: chol(Sigma) 
-arma::mat chol_Sigma = arma::solve(arma::trimatl(R.t()), arma::eye(R.n_rows, R.n_cols));
+	// Compute Cholesky of covariance: chol(Sigma) 
+	arma::mat chol_Sigma = arma::solve(arma::trimatl(R.t()), arma::eye(R.n_rows, R.n_cols));
 
-return List::create( Named("mean") = m, Named("chol") = chol_Sigma );
+	return List::create( Named("mean") = m, Named("chol") = chol_Sigma );
  }
- 
  
  
 
@@ -196,7 +133,247 @@ int choose_center_cpp(const arma::vec& x,
   return L_vals.index_max() + 1;
 }
 
+// [[Rcpp::export]]
+arma::ivec choose_center_matrix_cpp(const arma::mat& X,
+                                    const arma::mat& x_star,
+                                    const List& params) {
+  
+  int n_particles = X.n_rows;
+  arma::ivec centers(n_particles);
+  
+  arma::vec alpha = as<arma::vec>(params["alpha"]);
+  List B_list     = params["B"];
+  int J = alpha.n_elem;
+  
+  // Process each particle
+  for (int k = 0; k < n_particles; ++k) {
+    arma::vec x = X.row(k).t();  // Extract position as column vector
+    arma::vec L_vals(J);
+    
+    // Compute L values for all centers
+    for (int j = 0; j < J; ++j) {
+      arma::vec center = x_star.row(j).t();
+      arma::mat B      = as<arma::mat>(B_list[j]);
+      
+      arma::vec diff = x - center;
+      
+      // quad = t(diff) %*% B %*% diff
+      double quad = arma::as_scalar(diff.t() * B * diff);
+      
+      // q = t(diff) %*% t(B) %*% (B %*% diff)
+      arma::vec Bdiff = B * diff;
+      double q = arma::as_scalar(diff.t() * B.t() * Bdiff);
+      
+      L_vals(j) = 2.0 * std::log(alpha(j)) - 2.0 * quad + std::log(q);
+    }
+    
+    // Return R-style index (1-based)
+    centers(k) = L_vals.index_max() + 1;
+  }
+  
+  return centers;
+}
+
+// [[Rcpp::export]]
+List closest_point_on_boundary_cpp(const arma::vec& x,
+                                   const arma::mat& coords,
+                                   bool grad) {
+
+  int n = coords.n_rows;
+  double min_dist = std::numeric_limits<double>::infinity();
+
+  arma::vec closest_point(2, arma::fill::zeros);
+  arma::mat gradient;
+  bool has_gradient = false;
+
+  for (int i = 0; i < n - 1; ++i) {
+
+    arma::vec v = coords.row(i).t();
+    arma::vec w = coords.row(i + 1).t();
+    arma::vec e = w - v;
+
+    double l2 = arma::dot(e, e);
+
+    arma::vec projection;
+    double t_val;
+
+    if (l2 == 0.0) {
+      projection = v;
+      t_val = 0.0;
+    } else {
+      t_val = arma::dot(x - v, e) / l2;
+      t_val = std::max(0.0, std::min(1.0, t_val));
+      projection = v + t_val * e;
+    }
+
+    double dist = arma::norm(x - projection, 2);
+
+    if (dist < min_dist) {
+      min_dist = dist;
+      closest_point = projection;
+
+      if (grad && t_val > 0.0 && t_val < 1.0) {
+        gradient = (e * e.t()) / l2;
+        has_gradient = true;
+      } else {
+        has_gradient = false;
+      }
+    }
+  }
+
+  if (grad && has_gradient) {
+    return List::create(
+      Named("point") = closest_point,
+      Named("gradient") = gradient
+    );
+  } else {
+    return List::create(
+      Named("point") = closest_point,
+      Named("gradient") = R_NilValue
+    );
+  }
+}
+
+bool is_point_inside_polygon_cpp(const arma::vec& x,
+                                 const arma::mat& coords) {
+
+  // Access sp::point.in.polygon
+  Function pip("point.in.polygon", Environment::namespace_env("sp"));
+
+  // Call sp::point.in.polygon(x, y, polyx, polyy)
+  IntegerVector status = pip(
+    x(0),
+    x(1),
+    coords.col(0),
+    coords.col(1)
+  );
+
+  // Same logic as R:
+  // status == 1 (inside) or 2 (on edge)
+  return (status[0] == 1 || status[0] == 2);
+}
+
+// [[Rcpp::export]]
+arma::vec compute_push_cpp(const arma::vec& x,
+                           const arma::mat& coords,
+                           double lambda) {
+
+  arma::vec zero(2, arma::fill::zeros);
+
+  if (!std::isfinite(lambda)) {
+    return zero;
+  }
+
+  if (is_point_inside_polygon_cpp(x, coords)) {
+    return zero;
+  }
+
+  List proj = closest_point_on_boundary_cpp(x, coords, false);
+  arma::vec p = proj["point"];
+
+  return (x - p) / lambda;
+}
+
+// [[Rcpp::export]]
+arma::mat compute_push_matrix_cpp(const arma::mat& X,
+                                   const arma::mat& coords,
+                                   double lambda) {
+  
+  int n_particles = X.n_rows;
+  arma::mat push_matrix(n_particles, 2);
+  
+  // If lambda is infinite, return matrix of zeros
+  if (!std::isfinite(lambda)) {
+    push_matrix.zeros();
+    return push_matrix;
+  }
+  
+  // Process each particle
+  for (int k = 0; k < n_particles; ++k) {
+    arma::vec x = X.row(k).t();  // Extract position as column vector
+    
+    // Check if inside polygon
+    if (is_point_inside_polygon_cpp(x, coords)) {
+      push_matrix.row(k).zeros();
+    } else {
+      // Find closest point on boundary
+      List proj = closest_point_on_boundary_cpp(x, coords, false);
+      arma::vec p = proj["point"];
+      
+      // Compute push: (x - p) / lambda
+      arma::vec push = (x - p) / lambda;
+      push_matrix.row(k) = push.t();
+    }
+  }
+  
+  return push_matrix;
+}
 
 
+// [[Rcpp::export]]
+double dscaledt_cpp(double y,
+                    double mean,
+                    double scale,
+                    double df,
+                    bool logp) {
+  
+  // Standardize
+  double z = (y - mean) / scale;
+  
+  // Evaluate Student-t density using Rf_dt
+  double dens = Rf_dt(z, df, logp);  // logp == TRUE gives log density
+  
+  if (!logp) {
+    dens /= scale;  // scale correction for scaled t
+  } else {
+    dens -= std::log(scale);  // log version
+  }
+  
+  return dens;
+}
+
+
+// [[Rcpp::export]]
+double dmvt_mixture_cpp(const arma::vec& x,
+                        const arma::vec& mean,
+                        const List& params,
+                        bool logp) {
+  
+  double sigma_obs = as<double>(params["sigma_obs"]);
+  double rho       = as<double>(params["rho"]);
+  double a         = as<double>(params["a"]);
+  double df        = as<double>(params["df"]);
+  double p         = as<double>(params["p"]);
+
+  // --- Covariance matrices ---
+  arma::mat Sigma1 = sigma_obs * sigma_obs * arma::mat{{1, rho*std::sqrt(a)},
+                                                       {rho*std::sqrt(a), 1}};
+  arma::mat Sigma2 = sigma_obs * sigma_obs * arma::mat{{1, -rho*std::sqrt(a)},
+                                                       {-rho*std::sqrt(a), 1}};
+  
+  // --- Precompute constants ---
+  int d = 2; // dimension
+  
+  arma::vec diff = x - mean;
+
+  // --- Mahalanobis terms ---
+  double mahal1 = arma::as_scalar(diff.t() * arma::inv(Sigma1) * diff);
+  double mahal2 = arma::as_scalar(diff.t() * arma::inv(Sigma2) * diff);
+
+  // --- Multivariate t densities ---
+  double c1 = std::tgamma((df + d)/2.0) / (std::tgamma(df/2.0) * std::pow(df*M_PI, d/2.0) * std::sqrt(arma::det(Sigma1)));
+  double c2 = std::tgamma((df + d)/2.0) / (std::tgamma(df/2.0) * std::pow(df*M_PI, d/2.0) * std::sqrt(arma::det(Sigma2)));
+
+  double dens1 = c1 * std::pow(1 + mahal1/df, -(df+d)/2.0);
+  double dens2 = c2 * std::pow(1 + mahal2/df, -(df+d)/2.0);
+
+  double mixture = p * dens1 + (1 - p) * dens2;
+
+  if (logp) {
+    return std::log(mixture);
+  } else {
+    return mixture;
+  }
+}
 
 

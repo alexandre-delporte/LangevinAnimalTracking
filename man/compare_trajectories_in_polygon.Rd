@@ -10,13 +10,15 @@ compare_trajectories_in_polygon(
   U_est,
   polygon,
   true_line_opacity = 0.5,
-  est_line_opacity = 0.1
+  est_line_opacity = 0.1,
+  zoom_box = NULL,
+  labels = c("True path", "Estimated path")
 )
 }
 \arguments{
-\item{U_true}{Matrix of true states (x1, x2, v1, v2) from simulation}
+\item{U_true}{Matrix of true states (x1, x2) from simulation}
 
-\item{U_est}{Matrix of estimated states (x1, x2, v1, v2) from particle filter}
+\item{U_est}{Matrix of estimated states (x1, x2) from particle filter}
 
 \item{polygon}{SpatialPolygons object defining the boundary (from `sp` package)}
 

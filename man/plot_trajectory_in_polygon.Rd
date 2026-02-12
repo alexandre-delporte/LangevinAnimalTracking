@@ -15,7 +15,8 @@ plot_trajectory_in_polygon(
   obs_size = 0.1,
   show_obs = TRUE,
   potential_grid = NULL,
-  n_sub = 1
+  n_sub = 1,
+  zoom_box = NULL
 )
 }
 \arguments{
@@ -40,6 +41,8 @@ potential driving the movement}
 
 \item{n_sub}{Integer indicating subsampling rate for plotting 
 (default: 1, no subsampling)}
+
+\item{zoom_box}{should be a named list: list(xmin, xmax, ymin, ymax)}
 }
 \value{
 A ggplot object showing:

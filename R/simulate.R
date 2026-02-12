@@ -337,6 +337,7 @@ simulate_2D_trajectory <- function(n_sim,sde_params,
 #' potential driving the movement
 #' @param n_sub Integer indicating subsampling rate for plotting 
 #' (default: 1, no subsampling)
+#' @param zoom_box should be a named list: list(xmin, xmax, ymin, ymax)
 #' @return A ggplot object showing:
 #' \itemize{
 #'   \item Polygon boundary (light blue fill)
@@ -348,38 +349,40 @@ simulate_2D_trajectory <- function(n_sim,sde_params,
 #'
 
 plot_trajectory_in_polygon <- function(data, polygon, 
-                                       true_opacity = 0.2,obs_opacity=0.2,
-                                       potential_opacity=0.4,
-                                       true_size=0.2,obs_size=0.1,
-                                       show_obs=TRUE,
-                                       potential_grid=NULL,n_sub=1) {
-  #subsample data
-  if ("ID" %in% names(data) & length(unique(data$ID))>1) {
+                                       true_opacity = 0.2, obs_opacity = 0.2,
+                                       potential_opacity = 0.4,
+                                       true_size = 0.2, obs_size = 0.1,
+                                       show_obs = TRUE,
+                                       potential_grid = NULL, n_sub = 1,
+                                       zoom_box = NULL) {
+  # zoom_box should be a named list: list(xmin, xmax, ymin, ymax)
+  # Example: zoom_box = list(xmin = 0, xmax = 10, ymin = 0, ymax = 10)
+  
+  # Subsample data
+  if ("ID" %in% names(data) & length(unique(data$ID)) > 1) {
     data_sub <- do.call(rbind, lapply(split(data, data$ID), function(df) {
       df[seq(1, nrow(df), by = n_sub), , drop = FALSE]
     }))
     rownames(data_sub) <- NULL
-  }
-  else {
-    data_sub<-data[seq(1, nrow(data), by = n_sub),]
+  } else {
+    data_sub <- data[seq(1, nrow(data), by = n_sub), ]
   }
   
-  p<-ggplot()
+  p <- ggplot()
   
   polygon_coords <- as.data.frame(polygon@coords)
   
-  p<- p +
+  p <- p +
     geom_polygon(data = polygon_coords, aes(x = V1, y = V2), 
-                 fill = NA, color = "grey40",size=1) +
-    geom_point(data = data_sub, aes(x = X1, y = X2), size = true_size,alpha=true_opacity) +
-    geom_path(data = data_sub, aes(x = X1, y = X2),size = true_size, alpha = true_opacity)+
-    xlab(expression(X[1]))+ylab(expression(X[2]))+ theme_minimal(base_size=18)
+                 fill = NA, color = "grey40", size = 1) +
+    geom_point(data = data_sub, aes(x = X1, y = X2), size = true_size, alpha = true_opacity) +
+    geom_path(data = data_sub, aes(x = X1, y = X2), size = true_size, alpha = true_opacity) +
+    xlab(expression(X[1])) + ylab(expression(X[2])) + theme_minimal(base_size = 18)
   
   if (!(is.null(potential_grid))) {
-    
-    p<-p+geom_raster(data=potential_grid,aes(x,y,fill = H), interpolate = TRUE,alpha=potential_opacity) +
-      geom_contour(data=potential_grid,aes(x,y,z=H),color = "white", alpha = potential_opacity) +
-      scale_fill_gradient(low = "grey10", high = "white")+
+    p <- p + geom_raster(data = potential_grid, aes(x, y, fill = H), interpolate = TRUE, alpha = potential_opacity) +
+      geom_contour(data = potential_grid, aes(x, y, z = H), color = "white", alpha = potential_opacity) +
+      scale_fill_gradient(low = "grey10", high = "white") +
       coord_equal()
   }
   
@@ -392,12 +395,17 @@ plot_trajectory_in_polygon <- function(data, polygon,
                    color = "red", alpha = obs_opacity)
   }
   
-    
-  if ("ID" %in% names(data) & length(unique(data$ID))>1) {
+  # Apply zoom if zoom_box is provided
+  if (!is.null(zoom_box)) {
+    p <- p + 
+      coord_cartesian(xlim = c(zoom_box$xmin, zoom_box$xmax),
+                      ylim = c(zoom_box$ymin, zoom_box$ymax))
+  }
+  
+  if ("ID" %in% names(data) & length(unique(data$ID)) > 1) {
     p <- p + facet_wrap(~ID)
   }
   
-
   print(p)
-  return (p)
+  return(p)
 }

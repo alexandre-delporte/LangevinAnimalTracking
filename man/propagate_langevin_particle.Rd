@@ -22,6 +22,7 @@ propagate_langevin_particle(
   ind_fixed_point = NULL,
   L = NULL,
   Q = NULL,
+  proposal_weight = 0.5,
   verbose = FALSE
 )
 }
@@ -70,6 +71,8 @@ Gaussian potentials for splitting scheme. Default NULL}
 \item{L}{Precomputed observation link matrix for solving the SDE. Default NULL}
 
 \item{Q}{Precomputed process covariance matrix for solving the SDE. Default NULL}
+
+\item{proposal_weight}{weight in the gaussian proposal mean and covariance}
 
 \item{verbose}{Logical, whether to print progress messages (default: FALSE)}
 }

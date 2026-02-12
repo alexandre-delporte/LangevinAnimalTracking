@@ -33,6 +33,231 @@ product_gaussian<-function(P1,P2,mean1,mean2,M) {
   )
 }
 
+#' Laplace approximation for Student-t observation likelihood
+#'
+#' Finds the Gaussian approximation to the posterior:
+#' p(U | U_prev, y) = Student-t(y | M*U, scale, df) × N(U | mean, Q)
+#'
+#' @param y Numeric vector of length 2. Observation.
+#' @param mean Numeric vector of length 4
+#' @param Q Matrix 4x4. Covariance
+#' @param M Matrix 2x4. Observation matrix (typically [I_2, 0_2]).
+#' @param scale Numeric. Scale parameter of Student-t.
+#' @param df Numeric. Degrees of freedom of Student-t.
+#' @param max_iter Integer. Maximum Newton iterations (default: 10).
+#' @param tol Numeric. Convergence tolerance (default: 1e-6).
+#'
+#' @return List with:
+#'   - mean: Posterior mode (length 4)
+#'   - chol: Cholesky factor of posterior covariance (for sampling)
+#'   - cov: Posterior covariance matrix (optional, for diagnostics)
+#'   - converged: Logical. Did Newton-Raphson converge?
+#'   - n_iter: Number of iterations used.
+#'
+laplace_approximation_student <- function(y, mean, Q, M, scale, df,
+                                          max_iter = 20, tol = 1e-12,
+                                          return_cov = FALSE) {
+  #browser()
+  # Initialize at prior mean
+  U <- as.vector(mean)
+  Q_inv <- solve(Q)
+  
+  converged <- FALSE
+  
+  for (iter in 1:max_iter) {
+    
+    r <- as.vector(y - M %*% U)
+    
+    w <- (df + 1) / (df * scale^2 + r^2)        
+    W <- diag(w, nrow = 2)
+    
+    # ---- Gradient: Student-t likelihood ----
+    grad_student <- t(M) %*% (W %*% r)
+    a <- (df + 1) * (df * scale^2 - r^2) / (df * scale^2 + r^2)^2
+    A <- diag(a, nrow = 2)
+    D2_student <- -t(M) %*% A %*% M
+    
+  
+    grad_prior <- -Q_inv %*% (U - mean)
+    D2_prior <- -Q_inv
+    
+
+    grad_total <- grad_student + grad_prior
+    D2_total <- D2_student + D2_prior
+    D2_total <- (D2_total + t(D2_total)) / 2  # numerical symmetry
+    
+ 
+    H_neg <- -D2_total
+    
+    delta <- tryCatch({
+      R <- chol(H_neg)
+      z <- forwardsolve(t(R), grad_total)
+      backsolve(R, z)
+    }, error = function(e) {
+      solve(H_neg, grad_total)
+    })
+    
+    U_new <- U + as.vector(delta)
+    
+    if (sqrt(sum(delta^2)) < tol) {
+      converged <- TRUE
+      U <- U_new
+      break
+    }
+    
+    U <- U_new
+  }
+  
+  # ---- Final Hessian at mode ----
+  r <- as.vector(y - M %*% U)
+  w <- (df + 1) / (df * scale^2 + r^2)
+  a <- (df + 1) * (df * scale^2 - r^2) / (df * scale^2 + r^2)^2
+  
+  A <- diag(a, nrow = 2)
+  D2_student <- -t(M) %*% A %*% M
+  D2_total <- D2_student - Q_inv
+  D2_total <- (D2_total + t(D2_total)) / 2
+  
+  # Posterior covariance
+  Sigma_post <- solve(-D2_total)
+  Sigma_post <- (Sigma_post + t(Sigma_post)) / 2
+  
+  chol_Sigma <- tryCatch({
+    chol(Sigma_post)
+  }, error = function(e) {
+    Sigma_post <- Sigma_post + 1e-6 * diag(nrow(Sigma_post))
+    chol(Sigma_post)
+  })
+  
+  result <- list(
+    mean = as.vector(U),
+    chol = t(chol_Sigma),
+    converged = converged,
+    n_iter = iter
+  )
+  
+  if (return_cov) {
+    result$cov <- Sigma_post
+  }
+  
+  return(result)
+}
+
+
+#' Plot comparison between true target and Laplace approximation
+#' 
+#' @param y Numeric vector of length 2. Observation.
+#' @param x_prev_mean Numeric vector of length 2. Prior mean for the state.
+#' @param Qxx Matrix 2x2. Prior covariance for the state.
+#' @param scale Numeric. Scale parameter of Student-t.
+#' @param df Numeric. Degrees of freedom of Student-t.
+#' @param laplace_mean Numeric vector of length 2. Laplace mode.
+#' @param laplace_chol Matrix 2x2. Cholesky factor of Laplace covariance.
+#' @param grid_radius Numeric. Radius of the grid around Laplace mode.
+#' @param n_grid Integer. Number of grid points per dimension.
+#' @return None. Produces a 2-panel plot.
+#' 
+plot_student_laplace_comparison <- function(
+    y,
+    x_prev_mean,
+    Qxx,
+    scale,
+    df,
+    laplace_mean,
+    laplace_chol,
+    grid_radius = 0.8,
+    n_grid = 120) {
+  
+  #browser()
+  stopifnot(length(y) == 2,
+            length(x_prev_mean) == 2,
+            length(laplace_mean) == 2)
+  
+  Sigma_laplace <- laplace_chol %*% t(laplace_chol)
+  
+  # Grid centered at Laplace mode
+  x1 <- seq(laplace_mean[1] - grid_radius,
+            laplace_mean[1] + grid_radius,
+            length.out = n_grid)
+  
+  x2 <- seq(laplace_mean[2] - grid_radius,
+            laplace_mean[2] + grid_radius,
+            length.out = n_grid)
+  
+  grid <- expand.grid(x1 = x1, x2 = x2)
+  
+  ## ---- True target: Gaussian × Student-t ----
+  log_prior <- mvtnorm::dmvnorm(
+    as.matrix(grid),
+    mean = x_prev_mean,
+    sigma = Qxx,
+    log = TRUE
+  )
+  
+  log_like <-
+    dscaledt(y[1], mean = grid$x1, scale = scale, df = df, log = TRUE) +
+    dscaledt(y[2], mean = grid$x2, scale = scale, df = df, log = TRUE)
+  
+  log_target <- log_prior + log_like
+  z_true <- matrix(exp(log_target), n_grid, n_grid)
+  z_true <- z_true / sum(z_true)
+  
+  ## ---- Laplace Gaussian ----
+  z_laplace <- mvtnorm::dmvnorm(
+    as.matrix(grid),
+    mean = laplace_mean,
+    sigma = Sigma_laplace
+  )
+  z_laplace <- matrix(z_laplace, n_grid, n_grid)
+  z_laplace <- z_laplace / sum(z_laplace)
+  
+  ## ---- Shared color scale ----
+  zmax <- max(z_true, z_laplace)
+  print(zmax)
+  
+  ## ---- Plot ----
+  op <- par(mfrow = c(1, 2), mar = c(4, 4, 3, 5))
+  on.exit(par(op))
+  
+  image(
+    x1, x2, z_true,
+    col = hcl.colors(100, "viridis"),
+    zlim = c(0, zmax),
+    main = "True target\nGaussian × Student-t",
+    xlab = expression(X[1]),
+    ylab = expression(X[2])
+  )
+  points(x_prev_mean[1], x_prev_mean[2], col = "red", pch = 19)
+  points(y[1], y[2], col = "orange", pch = 19)
+  points(laplace_mean[1], laplace_mean[2], col = "white", pch = 4, lwd = 2)
+  
+  legend(
+    "topright",
+    legend = c(
+      expression(" Next state mean"),
+      expression("Observation"),
+      "Laplace mode"),
+    col = c("red", "orange", "white"),
+    pch = c(19, 19, 4),
+    pt.lwd = c(1, 1, 2),
+    bty = "n",
+    cex = 0.5
+  )
+  
+  image(
+    x1, x2, z_laplace,
+    col = hcl.colors(100, "viridis"),
+    zlim = c(0, zmax),
+    main = "Laplace Gaussian approximation",
+    xlab = expression(X[1]),
+    ylab = expression(X[2])
+  )
+  points(x_prev_mean[1], x_prev_mean[2], col = "red", pch = 19)
+  points(y[1], y[2], col = "orange", pch = 19)
+  points(laplace_mean[1], laplace_mean[2], col = "white", pch = 4, lwd = 2)
+  
+}
+
 
 
 #' Helper function to propagate particles for Langevin SDE
@@ -65,6 +290,7 @@ product_gaussian<-function(P1,P2,mean1,mean2,M) {
 #' Gaussian potentials for splitting scheme. Default NULL
 #' @param L Precomputed observation link matrix for solving the SDE. Default NULL
 #' @param Q Precomputed process covariance matrix for solving the SDE. Default NULL
+#' @param proposal_weight weight in the gaussian proposal mean and covariance
 #' @param verbose Logical, whether to print progress messages (default: FALSE)
 #' 
 #'@return Numeric vector of length 4. The propagated state \eqn{U_{t+\Delta}}
@@ -74,7 +300,8 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
                                       potential_params,tau,nu,omega,
                                       lambda,error_dist,error_params,
                                    scheme="Lie-Trotter",polygon,
-                                   ind_fixed_point=NULL,L=NULL,Q=NULL,verbose=FALSE) {
+                                   ind_fixed_point=NULL,L=NULL,Q=NULL,
+                                   proposal_weight=0.5,verbose=FALSE) {
   
   
   
@@ -88,7 +315,7 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
                      ind_fixed_point)
     
     #SDE mean and covariance
-    OU_solution<-solve_SDE(U_hat,delta,tau,nu,omega,potential_params,
+    OU_solution<-solve_SDE_cpp(U_hat,delta,tau,nu,omega,potential_params,
               ind_fixed_point,L,Q)
     Q<-OU_solution$Q
     mean<-OU_solution$mean
@@ -102,14 +329,16 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
       
       scale<-error_params$scale;df<-error_params$df
       gaussian_proposal<-product_gaussian_cpp(invQ,(df-2)/df/scale^2*I2,
-                                          mean,y,M)
+                                          mean,y,M,proposal_weight)
+      
     }
     
     else if (error_dist=="normal") {
       
       sigma_obs<-error_params$sigma_obs
       gaussian_proposal<-product_gaussian_cpp(invQ,1/sigma_obs^2*I2,
-                                          mean,y,M)
+                                          mean,y,M,proposal_weight)
+      
     } 
     else if (error_dist=="argos") {
       
@@ -125,7 +354,7 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
       u<-runif(1)
       invS <- if (u < p) invS1 else invS2
       
-      gaussian_proposal<-product_gaussian_cpp(invQ,invS,mean,y,M)
+      gaussian_proposal<-product_gaussian_cpp(invQ,invS,mean,y,M,proposal_weight)
   
     }
     
@@ -147,7 +376,7 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
     U_hat<-solve_ODE_cpp(U,delta/2,push,potential_params,
                      ind_fixed_point)
     #SDE mean and covariance
-    OU_solution<-solve_SDE(U_hat,delta,tau,nu,omega,potential_params,
+    OU_solution<-solve_SDE_cpp(U_hat,delta,tau,nu,omega,potential_params,
                            ind_fixed_point,L,Q)
     Q<-OU_solution$Q
     mean<-OU_solution$mean
@@ -162,14 +391,17 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
     
     # Propagate position only
     if (error_dist == "scaled_t") {
+      
       scale <- error_params$scale; df <- error_params$df
       gaussian_proposal<-product_gaussian_cpp(invQxx,(df-2)/df/scale^2*I2,
-                                          mean[1:2],y,I2)
+                                          mean[1:2],y,I2,proposal_weight)
+      
       
     } else if (error_dist == "normal") {
       sigma_obs <- error_params$sigma_obs
       gaussian_proposal<-product_gaussian_cpp(invQxx,1/sigma_obs^2*I2,
-                                          mean[1:2],y,I2)
+                                          mean[1:2],y,I2,proposal_weight)
+      X_next <- gaussian_proposal$mean + gaussian_proposal$chol %*% rnorm(2)
       
     } else if (error_dist == "argos") {
       df<-error_params$df;sigma_obs<-error_params$sigma_obs
@@ -184,7 +416,7 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
       u <- runif(1)
       invS <- if (u < p) invS1 else invS2
       gaussian_proposal<-product_gaussian_cpp(invQxx,invS,
-                                          mean[1:2],y,I2)
+                                          mean[1:2],y,I2,proposal_weight)
     }
     
     
@@ -260,8 +492,9 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
                                     potential_params = NULL, tau, nu, omega,
                                     error_dist, error_params,
                                     scheme = "Lie-Trotter",
-                                    ind_fixed_point = NULL,
-                                    verbose = FALSE,L=NULL,Q=NULL) {
+                                    ind_fixed_point = NULL,L=NULL,Q=NULL,
+                                    proposal_weight=0.5,
+                                    verbose = FALSE) {
   
   I2 <- diag(2)
   if (scheme == "Lie-Trotter") {
@@ -271,7 +504,7 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
                        potential_params, ind_fixed_point)
     
     ## SDE mean and covariance
-    OU_solution <- solve_SDE(U_hat, delta, tau, nu, omega,
+    OU_solution <- solve_SDE_cpp(U_hat, delta, tau, nu, omega,
                              potential_params, ind_fixed_point,L,Q)
     Q    <- OU_solution$Q
     mean <- OU_solution$mean
@@ -285,10 +518,11 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
       scale <- error_params$scale
       df    <- error_params$df
       
-      gaussian_proposal <- product_gaussian_cpp(
-        invQ,
-        (df - 2) / df / scale^2 * I2,
-        mean, y, M)
+       gaussian_proposal <- product_gaussian_cpp(
+         invQ,
+         (df - 2) / df / scale^2 * I2,
+        mean, y, M,proposal_weight)
+      
       
       local_llk <-
         dscaledt(y[1], mean = U_pred[1], scale = scale, df = df, log = TRUE) +
@@ -297,10 +531,9 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
       log_pred_density <- 
         log_dmvnorm_chol_cpp(U_pred, mean, cholQ)
       
-      log_prop_density <-log_dmvnorm_chol_cpp(
-        U_pred,gaussian_proposal$mean,
-        gaussian_proposal$chol)
-      
+       log_prop_density <-log_dmvnorm_chol_cpp(
+         U_pred,gaussian_proposal$mean,
+         gaussian_proposal$chol)
       
       log_weight <- local_llk + log_pred_density - log_prop_density
     }
@@ -312,7 +545,7 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
       
       gaussian_proposal <- product_gaussian_cpp(
         invQ, 1 / sigma_obs^2 * I2,
-        mean, y, M)
+        mean, y, M,proposal_weight)
       
       local_llk <-
         log_dmvnorm_chol_cpp(y, U_pred[1:2], cholSigma_obs)
@@ -352,9 +585,9 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
       cholS2 <- chol_cpp(S2)
       
       gaussian_proposal1 <- product_gaussian_cpp(invQ, chol2inv_cpp(cholS1),
-                                             mean, y, M)
+                                             mean, y, M,proposal_weight)
       gaussian_proposal2 <- product_gaussian_cpp(invQ, chol2inv_cpp(cholS2),
-                                             mean, y, M)
+                                             mean, y, M,proposal_weight)
       
       local_llk <- log(dmvt_mixture(y, U_pred[1:2], error_params))
       
@@ -384,7 +617,7 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
                        potential_params, ind_fixed_point)
     
     ## SDE
-    OU_solution <- solve_SDE(U_hat, delta, tau, nu, omega,
+    OU_solution <- solve_SDE_cpp(U_hat, delta, tau, nu, omega,
                              potential_params, ind_fixed_point,L,Q)
     
     Q    <- OU_solution$Q
@@ -401,8 +634,9 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
       cholSigma_obs <- sigma_obs * I2
       
       gaussian_proposal <- product_gaussian_cpp(
-        invQxx, 1 / sigma_obs^2 * I2,
-        mean[1:2], y, I2)
+         invQxx, 1 / sigma_obs^2 * I2,
+         mean[1:2], y, I2,proposal_weight)
+      
       
       local_llk <-
         log_dmvnorm_chol_cpp(y, U_pred[1:2], cholSigma_obs)
@@ -410,11 +644,12 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
       log_pred_density <-
         log_dmvnorm_chol_cpp(U_pred[1:2], mean[1:2], cholQxx)
       
-      log_prop_density <-
-        log_dmvnorm_chol_cpp(
-          U_pred[1:2],
-          gaussian_proposal$mean,
-          gaussian_proposal$chol)
+       log_prop_density <-
+         log_dmvnorm_chol_cpp(
+           U_pred[1:2],
+           gaussian_proposal$mean,
+           gaussian_proposal$chol)
+      
       
       log_weight <- local_llk + log_pred_density - log_prop_density
     }
@@ -424,11 +659,10 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
       scale <- error_params$scale
       df    <- error_params$df
       
-      gaussian_proposal <- product_gaussian_cpp(
-        invQxx,
-        (df - 2) / df / scale^2 *I2,
-        mean[1:2], y, I2
-      )
+       gaussian_proposal <- product_gaussian_cpp(
+         invQxx,
+         (df - 2) / df / scale^2 *I2,
+         mean[1:2], y, I2,proposal_weight)
       
       local_llk <-
         dscaledt(y[1], mean = U_pred[1], scale = scale, df = df, log = TRUE) +
@@ -438,10 +672,11 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
         log_dmvnorm_chol_cpp(U_pred[1:2], mean[1:2], cholQxx)
       
       log_prop_density <-
-        log_dmvnorm_chol_cpp(
-          U_pred[1:2],
+         log_dmvnorm_chol_cpp(
+           U_pred[1:2],
           gaussian_proposal$mean,
-          gaussian_proposal$chol)
+           gaussian_proposal$chol)
+      
       
       log_weight <- local_llk + log_pred_density - log_prop_density
     }
@@ -468,9 +703,9 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
       cholS2 <- chol_cpp(S2)
       
       gaussian_proposal1 <- product_gaussian_cpp(invQxx, chol2inv_cpp(cholS1),
-                                             mean[1:2], y, I2)
+                                             mean[1:2], y, I2,proposal_weight)
       gaussian_proposal2 <- product_gaussian_cpp(invQxx, chol2inv_cpp(cholS2),
-                                             mean[1:2], y, I2)
+                                             mean[1:2], y, I2,proposal_weight)
       
       local_llk <- log(dmvt_mixture(y, U_pred[1:2], error_params))
       
@@ -524,6 +759,8 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
 #' the underlying dynamic
 #' @param split_around_fixed_point Whether to split the SDE adaptatively around fixed point
 #' of the drift. Only works for mixture of gaussian potential. 
+#' @param ESS_threshold Effective sample size threshold for resampling (default: 0.5)
+#' @param proposal_weight Weight in gaussian proposal (between 0 and 1)
 #' @param verbose Logical, whether to print progress messages (default: FALSE)
 #'
 #' @return A list containing:
@@ -543,9 +780,10 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
 particle_filter2D <- function(data,sde_params,potential_params=NULL,
                               error_params,error_dist="normal",
                               polygon,U0,lambda,num_particles,scheme="Lie-Trotter",
-                              split_around_fixed_point=FALSE,ESS_threshold=0.5,verbose=FALSE) {
+                              split_around_fixed_point=FALSE,ESS_threshold=0.5,
+                              proposal_weight=0.5,verbose=FALSE) {
  
-  #browser()
+  
   cat("Running particle filter with params:", as.numeric(sde_params), "\n")
   # Number of observations
   N <- nrow(data)
@@ -644,7 +882,7 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
       U_prev <- particles[k, ,j]
       
       # Compute inward push
-      push<-compute_push(U_prev[1:2],polygon,lambda)
+      push<-compute_push_cpp(U_prev[1:2],polygon@coords,lambda)
       
       push_array[k, ,j] <- push
       
@@ -675,12 +913,13 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
       else { ind_fixed_point <- NULL
       }
     
-      U_next<-propagate_langevin_particle(U_prev,y,M,delta,push,
+      U_next<-propagate_langevin_particle_cpp(U_prev,y,M,delta,push,
                                           potential_params,tau,nu,omega,lambda,
                                           error_dist,error_params,
-                                          scheme,polygon,ind_fixed_point,verbose=FALSE,
+                                          scheme,polygon@coords,ind_fixed_point,
                                           L_list[[k]],
-                                          Q_list[[k]])
+                                          Q_list[[k]],proposal_weight,
+                                          verbose=FALSE)
       
       particles[k, , j + 1]=U_next
       
@@ -700,14 +939,15 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
       ind_fixed_point<-if (split_around_fixed_point) ind_fixed_point_mat[k,j]
       else NULL  #ind of fixed point for splitting
       
-      weights[k, j + 1] <- compute_langevin_weight(U_pred,U_prev,y,M,
+      weights[k, j + 1] <- compute_langevin_weight_cpp(U_pred,U_prev,y,M,
                                                    delta,push,
                                                    potential_params,tau,nu,omega,
                                                    error_dist,error_params,
                                                    scheme,
-                                                   ind_fixed_point,verbose=FALSE,
+                                                   ind_fixed_point,
                                                    L_list[[k]],
-                                                   Q_list[[k]])
+                                                   Q_list[[k]],
+                                                   proposal_weight,verbose=FALSE)
     
     }
   
@@ -795,8 +1035,8 @@ get_PF_mean<-function(PF_results) {
 #' Plot trajectory within polygon boundary
 #' Visualizes and compares true and estimated trajectories within a specified domain
 #'
-#' @param U_true Matrix of true states (x1, x2, v1, v2) from simulation
-#' @param U_est Matrix of estimated states (x1, x2, v1, v2) from particle filter
+#' @param U_true Matrix of true states (x1, x2) from simulation
+#' @param U_est Matrix of estimated states (x1, x2) from particle filter
 #' @param polygon SpatialPolygons object defining the boundary (from `sp` package)
 #' @param true_line_opacity Opacity for true trajectory line (0-1, default: 0.5)
 #' @param est_line_opacity Opacity for estimated trajectory line (0-1, default: 0.1)
@@ -813,26 +1053,48 @@ get_PF_mean<-function(PF_results) {
 #' @importFrom sp SpatialPolygons
 compare_trajectories_in_polygon <- function(U_true, U_est, 
                                             polygon, true_line_opacity = 0.5,
-                                            est_line_opacity = 0.1) {
+                                            est_line_opacity = 0.1,
+                                            zoom_box = NULL,
+                                            labels=c("True path","Estimated path")) {
+  
   # Extract the coordinates of the polygon
   polygon_coords <- as.data.frame(polygon@coords)
   
   # Create data frames for the true and estimated trajectory points
   U_true_df <- as.data.frame(U_true)
-  colnames(U_true_df)[1:2] <- c("X1", "X2")
+  colnames(U_true_df) <- c("X1", "X2")
+  U_true_df$Type <- labels[1]
   
   U_est_df <- as.data.frame(U_est)
-  colnames(U_est_df) [1:2] <- c("X1", "X2")
+  colnames(U_est_df) <- c("X1", "X2")
+  U_est_df$Type <- labels[2]
   
-  p <- ggplot() +geom_polygon(data = polygon_coords, aes(x = V1, y = V2), fill = "lightblue", color = "blue") +
-    geom_point(data = U_true_df, aes(x = X1, y = X2), color = "black", size = 1,alpha=0.2) +
-    geom_path(data = U_true_df, aes(x = X1, y = X2), color = "black", size = 1, alpha = true_line_opacity) +
-    geom_point(data = U_est_df, aes(x = X1, y = X2), color = "orange", size = 1,alpha=0.2) +
-    geom_path(data = U_est_df, aes(x = X1, y = X2), color = "orange", size = 1, alpha = est_line_opacity) +
-    labs(title = "Comparison of True and Estimated Trajectories",
+  # Combine data for easier legend handling
+  combined_df <- rbind(U_true_df, U_est_df)
+  combined_df$Type <- factor(combined_df$Type, levels = labels)
+  
+  colors<-c("black","orange")
+  names(colors)=labels
+  
+  p <- ggplot() +
+    geom_polygon(data = polygon_coords, aes(x = V1, y = V2), fill = NA, color = "grey40") +
+    geom_point(data = combined_df, aes(x = X1, y = X2, color = Type), size = 1, alpha = 0.2) +
+    geom_path(data = U_true_df, aes(x = X1, y = X2, color = Type), size = 1, alpha = true_line_opacity) +
+    geom_path(data = U_est_df, aes(x = X1, y = X2, color = Type), size = 1, alpha = est_line_opacity) +
+    scale_color_manual(values = colors,
+                       name = "Trajectory") +
+    labs(title ="",
          x = "X1",
          y = "X2") +
-    theme_minimal()
+    theme_minimal() +
+    theme(legend.position = "right")
+  
+  # Apply zoom if zoom_box is provided
+  if (!is.null(zoom_box)) {
+    p <- p + 
+      coord_cartesian(xlim = c(zoom_box$xmin, zoom_box$xmax),
+                      ylim = c(zoom_box$ymin, zoom_box$ymax))
+  }
   
   print(p)
   return(p)

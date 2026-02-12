@@ -2,11 +2,11 @@
 
 test_that("RACVM analytical derivatives match finite differences", {
   
-  h <- 0.1
+  h <- 0.02
   tau <- 1.0
-  nu <- 0.5
-  omega <- 3
-  epsilon <- 1e-7
+  nu <- 5
+  omega <- 0.1
+  epsilon <- 1e-8
   
   Q_analytical <- dRACVM_cov(tau, nu, omega, h)
   T_analytical <- dRACVM_link(tau, omega, h)
@@ -36,7 +36,7 @@ test_that("RACVM analytical derivatives match finite differences", {
   expect_lt(max(abs(T_analytical$tau - dT_dtau_num)), 1e-5)
   
   # dT/domega
-  dT_domega_numerical <- (RACVM_link(tau, omega + epsilon, h) -
+  dT_domega_num <- (RACVM_link(tau, omega + epsilon, h) -
                             RACVM_link(tau, omega - epsilon, h)) / (2 * epsilon)
   expect_lt(max(abs(T_analytical$omega - dT_domega_num)), 1e-5)
   

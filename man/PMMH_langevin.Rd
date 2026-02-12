@@ -25,6 +25,7 @@ PMMH_langevin(
   t0 = 100,
   epsilon = 1e-05,
   sd_scaling = NULL,
+  ESS_threshold = 0.2,
   verbose = TRUE
 )
 }

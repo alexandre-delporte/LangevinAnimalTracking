@@ -11,20 +11,6 @@ Rcpp::Rostream<true>&  Rcpp::Rcout = Rcpp::Rcpp_cout_get();
 Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
-// mix_gaussian_grad_cpp
-arma::vec mix_gaussian_grad_cpp(const arma::vec& x, const arma::mat& x_star, const List& params, const IntegerVector& exclude);
-RcppExport SEXP _LangevinAnimalTracking_mix_gaussian_grad_cpp(SEXP xSEXP, SEXP x_starSEXP, SEXP paramsSEXP, SEXP excludeSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< const arma::vec& >::type x(xSEXP);
-    Rcpp::traits::input_parameter< const arma::mat& >::type x_star(x_starSEXP);
-    Rcpp::traits::input_parameter< const List& >::type params(paramsSEXP);
-    Rcpp::traits::input_parameter< const IntegerVector& >::type exclude(excludeSEXP);
-    rcpp_result_gen = Rcpp::wrap(mix_gaussian_grad_cpp(x, x_star, params, exclude));
-    return rcpp_result_gen;
-END_RCPP
-}
 // solve_ODE_cpp
 arma::vec solve_ODE_cpp(const arma::vec& U, double delta, const arma::vec& push, const List& potential_params, Nullable<int> ind_fixed_point);
 RcppExport SEXP _LangevinAnimalTracking_solve_ODE_cpp(SEXP USEXP, SEXP deltaSEXP, SEXP pushSEXP, SEXP potential_paramsSEXP, SEXP ind_fixed_pointSEXP) {
@@ -37,6 +23,174 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const List& >::type potential_params(potential_paramsSEXP);
     Rcpp::traits::input_parameter< Nullable<int> >::type ind_fixed_point(ind_fixed_pointSEXP);
     rcpp_result_gen = Rcpp::wrap(solve_ODE_cpp(U, delta, push, potential_params, ind_fixed_point));
+    return rcpp_result_gen;
+END_RCPP
+}
+// propagate_langevin_particle_cpp
+arma::vec propagate_langevin_particle_cpp(const arma::vec& U, const arma::vec& y, const arma::mat& M, double delta, const arma::vec& push, const List& potential_params, double tau, double nu, double omega, double lambda, const std::string& error_dist, const List& error_params, const std::string& scheme, const arma::mat& polygon_coords, Nullable<int> ind_fixed_point, Nullable<arma::mat> L_provided, Nullable<arma::mat> Q_provided, double proposal_weight, bool verbose);
+RcppExport SEXP _LangevinAnimalTracking_propagate_langevin_particle_cpp(SEXP USEXP, SEXP ySEXP, SEXP MSEXP, SEXP deltaSEXP, SEXP pushSEXP, SEXP potential_paramsSEXP, SEXP tauSEXP, SEXP nuSEXP, SEXP omegaSEXP, SEXP lambdaSEXP, SEXP error_distSEXP, SEXP error_paramsSEXP, SEXP schemeSEXP, SEXP polygon_coordsSEXP, SEXP ind_fixed_pointSEXP, SEXP L_providedSEXP, SEXP Q_providedSEXP, SEXP proposal_weightSEXP, SEXP verboseSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::vec& >::type U(USEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type y(ySEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type M(MSEXP);
+    Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type push(pushSEXP);
+    Rcpp::traits::input_parameter< const List& >::type potential_params(potential_paramsSEXP);
+    Rcpp::traits::input_parameter< double >::type tau(tauSEXP);
+    Rcpp::traits::input_parameter< double >::type nu(nuSEXP);
+    Rcpp::traits::input_parameter< double >::type omega(omegaSEXP);
+    Rcpp::traits::input_parameter< double >::type lambda(lambdaSEXP);
+    Rcpp::traits::input_parameter< const std::string& >::type error_dist(error_distSEXP);
+    Rcpp::traits::input_parameter< const List& >::type error_params(error_paramsSEXP);
+    Rcpp::traits::input_parameter< const std::string& >::type scheme(schemeSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type polygon_coords(polygon_coordsSEXP);
+    Rcpp::traits::input_parameter< Nullable<int> >::type ind_fixed_point(ind_fixed_pointSEXP);
+    Rcpp::traits::input_parameter< Nullable<arma::mat> >::type L_provided(L_providedSEXP);
+    Rcpp::traits::input_parameter< Nullable<arma::mat> >::type Q_provided(Q_providedSEXP);
+    Rcpp::traits::input_parameter< double >::type proposal_weight(proposal_weightSEXP);
+    Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
+    rcpp_result_gen = Rcpp::wrap(propagate_langevin_particle_cpp(U, y, M, delta, push, potential_params, tau, nu, omega, lambda, error_dist, error_params, scheme, polygon_coords, ind_fixed_point, L_provided, Q_provided, proposal_weight, verbose));
+    return rcpp_result_gen;
+END_RCPP
+}
+// compute_langevin_weight_cpp
+double compute_langevin_weight_cpp(const arma::vec& U_pred, const arma::vec& U_prev, const arma::vec& y, const arma::mat& M, double delta, const arma::vec& push, const List& potential_params, double tau, double nu, double omega, const std::string& error_dist, const List& error_params, const std::string& scheme, Nullable<int> ind_fixed_point, Nullable<arma::mat> L, Nullable<arma::mat> Q, double proposal_weight, bool verbose);
+RcppExport SEXP _LangevinAnimalTracking_compute_langevin_weight_cpp(SEXP U_predSEXP, SEXP U_prevSEXP, SEXP ySEXP, SEXP MSEXP, SEXP deltaSEXP, SEXP pushSEXP, SEXP potential_paramsSEXP, SEXP tauSEXP, SEXP nuSEXP, SEXP omegaSEXP, SEXP error_distSEXP, SEXP error_paramsSEXP, SEXP schemeSEXP, SEXP ind_fixed_pointSEXP, SEXP LSEXP, SEXP QSEXP, SEXP proposal_weightSEXP, SEXP verboseSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::vec& >::type U_pred(U_predSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type U_prev(U_prevSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type y(ySEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type M(MSEXP);
+    Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type push(pushSEXP);
+    Rcpp::traits::input_parameter< const List& >::type potential_params(potential_paramsSEXP);
+    Rcpp::traits::input_parameter< double >::type tau(tauSEXP);
+    Rcpp::traits::input_parameter< double >::type nu(nuSEXP);
+    Rcpp::traits::input_parameter< double >::type omega(omegaSEXP);
+    Rcpp::traits::input_parameter< const std::string& >::type error_dist(error_distSEXP);
+    Rcpp::traits::input_parameter< const List& >::type error_params(error_paramsSEXP);
+    Rcpp::traits::input_parameter< const std::string& >::type scheme(schemeSEXP);
+    Rcpp::traits::input_parameter< Nullable<int> >::type ind_fixed_point(ind_fixed_pointSEXP);
+    Rcpp::traits::input_parameter< Nullable<arma::mat> >::type L(LSEXP);
+    Rcpp::traits::input_parameter< Nullable<arma::mat> >::type Q(QSEXP);
+    Rcpp::traits::input_parameter< double >::type proposal_weight(proposal_weightSEXP);
+    Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
+    rcpp_result_gen = Rcpp::wrap(compute_langevin_weight_cpp(U_pred, U_prev, y, M, delta, push, potential_params, tau, nu, omega, error_dist, error_params, scheme, ind_fixed_point, L, Q, proposal_weight, verbose));
+    return rcpp_result_gen;
+END_RCPP
+}
+// particle_filter2D_cpp
+List particle_filter2D_cpp(const arma::mat& observations, const List& sde_params, const List& potential_params, const List& error_params, const std::string& error_dist, const arma::mat& polygon_coords, const arma::vec& U0, double lambda, int num_particles, const std::string& scheme, bool split_around_fixed_point, double ESS_threshold, double proposal_weight, bool verbose);
+RcppExport SEXP _LangevinAnimalTracking_particle_filter2D_cpp(SEXP observationsSEXP, SEXP sde_paramsSEXP, SEXP potential_paramsSEXP, SEXP error_paramsSEXP, SEXP error_distSEXP, SEXP polygon_coordsSEXP, SEXP U0SEXP, SEXP lambdaSEXP, SEXP num_particlesSEXP, SEXP schemeSEXP, SEXP split_around_fixed_pointSEXP, SEXP ESS_thresholdSEXP, SEXP proposal_weightSEXP, SEXP verboseSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type observations(observationsSEXP);
+    Rcpp::traits::input_parameter< const List& >::type sde_params(sde_paramsSEXP);
+    Rcpp::traits::input_parameter< const List& >::type potential_params(potential_paramsSEXP);
+    Rcpp::traits::input_parameter< const List& >::type error_params(error_paramsSEXP);
+    Rcpp::traits::input_parameter< const std::string& >::type error_dist(error_distSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type polygon_coords(polygon_coordsSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type U0(U0SEXP);
+    Rcpp::traits::input_parameter< double >::type lambda(lambdaSEXP);
+    Rcpp::traits::input_parameter< int >::type num_particles(num_particlesSEXP);
+    Rcpp::traits::input_parameter< const std::string& >::type scheme(schemeSEXP);
+    Rcpp::traits::input_parameter< bool >::type split_around_fixed_point(split_around_fixed_pointSEXP);
+    Rcpp::traits::input_parameter< double >::type ESS_threshold(ESS_thresholdSEXP);
+    Rcpp::traits::input_parameter< double >::type proposal_weight(proposal_weightSEXP);
+    Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
+    rcpp_result_gen = Rcpp::wrap(particle_filter2D_cpp(observations, sde_params, potential_params, error_params, error_dist, polygon_coords, U0, lambda, num_particles, scheme, split_around_fixed_point, ESS_threshold, proposal_weight, verbose));
+    return rcpp_result_gen;
+END_RCPP
+}
+// OU_cov_exact_cpp
+arma::mat OU_cov_exact_cpp(const arma::mat& A, const arma::mat& Gamma, double h, const arma::mat& expAh);
+RcppExport SEXP _LangevinAnimalTracking_OU_cov_exact_cpp(SEXP ASEXP, SEXP GammaSEXP, SEXP hSEXP, SEXP expAhSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type A(ASEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type Gamma(GammaSEXP);
+    Rcpp::traits::input_parameter< double >::type h(hSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type expAh(expAhSEXP);
+    rcpp_result_gen = Rcpp::wrap(OU_cov_exact_cpp(A, Gamma, h, expAh));
+    return rcpp_result_gen;
+END_RCPP
+}
+// OU_cov_exact_cpp_full
+arma::mat OU_cov_exact_cpp_full(const arma::mat& A, const arma::mat& Gamma, double h);
+RcppExport SEXP _LangevinAnimalTracking_OU_cov_exact_cpp_full(SEXP ASEXP, SEXP GammaSEXP, SEXP hSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type A(ASEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type Gamma(GammaSEXP);
+    Rcpp::traits::input_parameter< double >::type h(hSEXP);
+    rcpp_result_gen = Rcpp::wrap(OU_cov_exact_cpp_full(A, Gamma, h));
+    return rcpp_result_gen;
+END_RCPP
+}
+// RACVM_cov_cpp
+arma::mat RACVM_cov_cpp(double tau, double nu, double omega, double dt);
+RcppExport SEXP _LangevinAnimalTracking_RACVM_cov_cpp(SEXP tauSEXP, SEXP nuSEXP, SEXP omegaSEXP, SEXP dtSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type tau(tauSEXP);
+    Rcpp::traits::input_parameter< double >::type nu(nuSEXP);
+    Rcpp::traits::input_parameter< double >::type omega(omegaSEXP);
+    Rcpp::traits::input_parameter< double >::type dt(dtSEXP);
+    rcpp_result_gen = Rcpp::wrap(RACVM_cov_cpp(tau, nu, omega, dt));
+    return rcpp_result_gen;
+END_RCPP
+}
+// RACVM_link_cpp
+arma::mat RACVM_link_cpp(double tau, double omega, double dt);
+RcppExport SEXP _LangevinAnimalTracking_RACVM_link_cpp(SEXP tauSEXP, SEXP omegaSEXP, SEXP dtSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type tau(tauSEXP);
+    Rcpp::traits::input_parameter< double >::type omega(omegaSEXP);
+    Rcpp::traits::input_parameter< double >::type dt(dtSEXP);
+    rcpp_result_gen = Rcpp::wrap(RACVM_link_cpp(tau, omega, dt));
+    return rcpp_result_gen;
+END_RCPP
+}
+// solve_SDE_cpp
+List solve_SDE_cpp(const arma::vec& U, double delta, double tau, double nu, double omega, const List& potential_params, Nullable<int> ind_fixed_point, Nullable<arma::mat> L_provided, Nullable<arma::mat> Q_provided);
+RcppExport SEXP _LangevinAnimalTracking_solve_SDE_cpp(SEXP USEXP, SEXP deltaSEXP, SEXP tauSEXP, SEXP nuSEXP, SEXP omegaSEXP, SEXP potential_paramsSEXP, SEXP ind_fixed_pointSEXP, SEXP L_providedSEXP, SEXP Q_providedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::vec& >::type U(USEXP);
+    Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< double >::type tau(tauSEXP);
+    Rcpp::traits::input_parameter< double >::type nu(nuSEXP);
+    Rcpp::traits::input_parameter< double >::type omega(omegaSEXP);
+    Rcpp::traits::input_parameter< const List& >::type potential_params(potential_paramsSEXP);
+    Rcpp::traits::input_parameter< Nullable<int> >::type ind_fixed_point(ind_fixed_pointSEXP);
+    Rcpp::traits::input_parameter< Nullable<arma::mat> >::type L_provided(L_providedSEXP);
+    Rcpp::traits::input_parameter< Nullable<arma::mat> >::type Q_provided(Q_providedSEXP);
+    rcpp_result_gen = Rcpp::wrap(solve_SDE_cpp(U, delta, tau, nu, omega, potential_params, ind_fixed_point, L_provided, Q_provided));
+    return rcpp_result_gen;
+END_RCPP
+}
+// mix_gaussian_grad_cpp
+arma::vec mix_gaussian_grad_cpp(const arma::vec& x, const arma::mat& x_star, const List& params, const IntegerVector& exclude);
+RcppExport SEXP _LangevinAnimalTracking_mix_gaussian_grad_cpp(SEXP xSEXP, SEXP x_starSEXP, SEXP paramsSEXP, SEXP excludeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::vec& >::type x(xSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type x_star(x_starSEXP);
+    Rcpp::traits::input_parameter< const List& >::type params(paramsSEXP);
+    Rcpp::traits::input_parameter< const IntegerVector& >::type exclude(excludeSEXP);
+    rcpp_result_gen = Rcpp::wrap(mix_gaussian_grad_cpp(x, x_star, params, exclude));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -54,8 +208,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // product_gaussian_cpp
-List product_gaussian_cpp(const arma::mat& P1, const arma::mat& P2, const arma::vec& mean1, const arma::vec& mean2, const arma::mat& M);
-RcppExport SEXP _LangevinAnimalTracking_product_gaussian_cpp(SEXP P1SEXP, SEXP P2SEXP, SEXP mean1SEXP, SEXP mean2SEXP, SEXP MSEXP) {
+List product_gaussian_cpp(const arma::mat& P1, const arma::mat& P2, const arma::vec& mean1, const arma::vec& mean2, const arma::mat& M, double proposal_weight);
+RcppExport SEXP _LangevinAnimalTracking_product_gaussian_cpp(SEXP P1SEXP, SEXP P2SEXP, SEXP mean1SEXP, SEXP mean2SEXP, SEXP MSEXP, SEXP proposal_weightSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -64,7 +218,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const arma::vec& >::type mean1(mean1SEXP);
     Rcpp::traits::input_parameter< const arma::vec& >::type mean2(mean2SEXP);
     Rcpp::traits::input_parameter< const arma::mat& >::type M(MSEXP);
-    rcpp_result_gen = Rcpp::wrap(product_gaussian_cpp(P1, P2, mean1, mean2, M));
+    Rcpp::traits::input_parameter< double >::type proposal_weight(proposal_weightSEXP);
+    rcpp_result_gen = Rcpp::wrap(product_gaussian_cpp(P1, P2, mean1, mean2, M, proposal_weight));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -103,15 +258,110 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// choose_center_matrix_cpp
+arma::ivec choose_center_matrix_cpp(const arma::mat& X, const arma::mat& x_star, const List& params);
+RcppExport SEXP _LangevinAnimalTracking_choose_center_matrix_cpp(SEXP XSEXP, SEXP x_starSEXP, SEXP paramsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type x_star(x_starSEXP);
+    Rcpp::traits::input_parameter< const List& >::type params(paramsSEXP);
+    rcpp_result_gen = Rcpp::wrap(choose_center_matrix_cpp(X, x_star, params));
+    return rcpp_result_gen;
+END_RCPP
+}
+// closest_point_on_boundary_cpp
+List closest_point_on_boundary_cpp(const arma::vec& x, const arma::mat& coords, bool grad);
+RcppExport SEXP _LangevinAnimalTracking_closest_point_on_boundary_cpp(SEXP xSEXP, SEXP coordsSEXP, SEXP gradSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::vec& >::type x(xSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type coords(coordsSEXP);
+    Rcpp::traits::input_parameter< bool >::type grad(gradSEXP);
+    rcpp_result_gen = Rcpp::wrap(closest_point_on_boundary_cpp(x, coords, grad));
+    return rcpp_result_gen;
+END_RCPP
+}
+// compute_push_cpp
+arma::vec compute_push_cpp(const arma::vec& x, const arma::mat& coords, double lambda);
+RcppExport SEXP _LangevinAnimalTracking_compute_push_cpp(SEXP xSEXP, SEXP coordsSEXP, SEXP lambdaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::vec& >::type x(xSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type coords(coordsSEXP);
+    Rcpp::traits::input_parameter< double >::type lambda(lambdaSEXP);
+    rcpp_result_gen = Rcpp::wrap(compute_push_cpp(x, coords, lambda));
+    return rcpp_result_gen;
+END_RCPP
+}
+// compute_push_matrix_cpp
+arma::mat compute_push_matrix_cpp(const arma::mat& X, const arma::mat& coords, double lambda);
+RcppExport SEXP _LangevinAnimalTracking_compute_push_matrix_cpp(SEXP XSEXP, SEXP coordsSEXP, SEXP lambdaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type coords(coordsSEXP);
+    Rcpp::traits::input_parameter< double >::type lambda(lambdaSEXP);
+    rcpp_result_gen = Rcpp::wrap(compute_push_matrix_cpp(X, coords, lambda));
+    return rcpp_result_gen;
+END_RCPP
+}
+// dscaledt_cpp
+double dscaledt_cpp(double y, double mean, double scale, double df, bool logp);
+RcppExport SEXP _LangevinAnimalTracking_dscaledt_cpp(SEXP ySEXP, SEXP meanSEXP, SEXP scaleSEXP, SEXP dfSEXP, SEXP logpSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type y(ySEXP);
+    Rcpp::traits::input_parameter< double >::type mean(meanSEXP);
+    Rcpp::traits::input_parameter< double >::type scale(scaleSEXP);
+    Rcpp::traits::input_parameter< double >::type df(dfSEXP);
+    Rcpp::traits::input_parameter< bool >::type logp(logpSEXP);
+    rcpp_result_gen = Rcpp::wrap(dscaledt_cpp(y, mean, scale, df, logp));
+    return rcpp_result_gen;
+END_RCPP
+}
+// dmvt_mixture_cpp
+double dmvt_mixture_cpp(const arma::vec& x, const arma::vec& mean, const List& params, bool logp);
+RcppExport SEXP _LangevinAnimalTracking_dmvt_mixture_cpp(SEXP xSEXP, SEXP meanSEXP, SEXP paramsSEXP, SEXP logpSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::vec& >::type x(xSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type mean(meanSEXP);
+    Rcpp::traits::input_parameter< const List& >::type params(paramsSEXP);
+    Rcpp::traits::input_parameter< bool >::type logp(logpSEXP);
+    rcpp_result_gen = Rcpp::wrap(dmvt_mixture_cpp(x, mean, params, logp));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_LangevinAnimalTracking_mix_gaussian_grad_cpp", (DL_FUNC) &_LangevinAnimalTracking_mix_gaussian_grad_cpp, 4},
     {"_LangevinAnimalTracking_solve_ODE_cpp", (DL_FUNC) &_LangevinAnimalTracking_solve_ODE_cpp, 5},
+    {"_LangevinAnimalTracking_propagate_langevin_particle_cpp", (DL_FUNC) &_LangevinAnimalTracking_propagate_langevin_particle_cpp, 19},
+    {"_LangevinAnimalTracking_compute_langevin_weight_cpp", (DL_FUNC) &_LangevinAnimalTracking_compute_langevin_weight_cpp, 18},
+    {"_LangevinAnimalTracking_particle_filter2D_cpp", (DL_FUNC) &_LangevinAnimalTracking_particle_filter2D_cpp, 14},
+    {"_LangevinAnimalTracking_OU_cov_exact_cpp", (DL_FUNC) &_LangevinAnimalTracking_OU_cov_exact_cpp, 4},
+    {"_LangevinAnimalTracking_OU_cov_exact_cpp_full", (DL_FUNC) &_LangevinAnimalTracking_OU_cov_exact_cpp_full, 3},
+    {"_LangevinAnimalTracking_RACVM_cov_cpp", (DL_FUNC) &_LangevinAnimalTracking_RACVM_cov_cpp, 4},
+    {"_LangevinAnimalTracking_RACVM_link_cpp", (DL_FUNC) &_LangevinAnimalTracking_RACVM_link_cpp, 3},
+    {"_LangevinAnimalTracking_solve_SDE_cpp", (DL_FUNC) &_LangevinAnimalTracking_solve_SDE_cpp, 9},
+    {"_LangevinAnimalTracking_mix_gaussian_grad_cpp", (DL_FUNC) &_LangevinAnimalTracking_mix_gaussian_grad_cpp, 4},
     {"_LangevinAnimalTracking_log_dmvnorm_chol_cpp", (DL_FUNC) &_LangevinAnimalTracking_log_dmvnorm_chol_cpp, 3},
-    {"_LangevinAnimalTracking_product_gaussian_cpp", (DL_FUNC) &_LangevinAnimalTracking_product_gaussian_cpp, 5},
+    {"_LangevinAnimalTracking_product_gaussian_cpp", (DL_FUNC) &_LangevinAnimalTracking_product_gaussian_cpp, 6},
     {"_LangevinAnimalTracking_chol_cpp", (DL_FUNC) &_LangevinAnimalTracking_chol_cpp, 1},
     {"_LangevinAnimalTracking_chol2inv_cpp", (DL_FUNC) &_LangevinAnimalTracking_chol2inv_cpp, 1},
     {"_LangevinAnimalTracking_choose_center_cpp", (DL_FUNC) &_LangevinAnimalTracking_choose_center_cpp, 3},
+    {"_LangevinAnimalTracking_choose_center_matrix_cpp", (DL_FUNC) &_LangevinAnimalTracking_choose_center_matrix_cpp, 3},
+    {"_LangevinAnimalTracking_closest_point_on_boundary_cpp", (DL_FUNC) &_LangevinAnimalTracking_closest_point_on_boundary_cpp, 3},
+    {"_LangevinAnimalTracking_compute_push_cpp", (DL_FUNC) &_LangevinAnimalTracking_compute_push_cpp, 3},
+    {"_LangevinAnimalTracking_compute_push_matrix_cpp", (DL_FUNC) &_LangevinAnimalTracking_compute_push_matrix_cpp, 3},
+    {"_LangevinAnimalTracking_dscaledt_cpp", (DL_FUNC) &_LangevinAnimalTracking_dscaledt_cpp, 5},
+    {"_LangevinAnimalTracking_dmvt_mixture_cpp", (DL_FUNC) &_LangevinAnimalTracking_dmvt_mixture_cpp, 4},
     {NULL, NULL, 0}
 };
 

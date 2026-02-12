@@ -19,9 +19,10 @@ compute_langevin_weight(
   error_params,
   scheme = "Lie-Trotter",
   ind_fixed_point = NULL,
-  verbose = FALSE,
   L = NULL,
-  Q = NULL
+  Q = NULL,
+  proposal_weight = 0.5,
+  verbose = FALSE
 )
 }
 \arguments{
@@ -64,11 +65,11 @@ either `"Lie-Trotter"` (default) or `"Strang"`.}
 \item{ind_fixed_point}{index of fixed point of the mixture of
 Gaussian potentials for splitting scheme. Default NULL}
 
-\item{verbose}{Logical, whether to print progress messages (default: FALSE)}
-
 \item{L}{Precomputed observation link matrix for solving the SDE. Default NULL}
 
 \item{Q}{Precomputed process covariance matrix for solving the SDE. Default NULL}
+
+\item{verbose}{Logical, whether to print progress messages (default: FALSE)}
 }
 \value{
 Numeric vector of length 4. The propagated state \eqn{U_{t+\Delta}}

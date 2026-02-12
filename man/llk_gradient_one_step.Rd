@@ -2,8 +2,8 @@
 % Please edit documentation in R/llk_gradient.R
 \name{llk_gradient_one_step}
 \alias{llk_gradient_one_step}
-\title{Compute gradient of log-likelihood for one time step (works only for Lie-Trotter scheme 
-with splitting around 0)}
+\title{Compute gradient of log-likelihood for one time step
+Supports both Lie-Trotter and Strang schemes}
 \usage{
 llk_gradient_one_step(
   U_next,
@@ -14,10 +14,9 @@ llk_gradient_one_step(
   tau,
   nu,
   omega,
-  error_dist = NULL,
-  error_params = NULL,
   scheme = "Lie-Trotter",
-  ind_fixed_point = NULL,
+  push_next = NULL,
+  potential_grad_next = NULL,
   verbose = FALSE
 )
 }
@@ -38,13 +37,12 @@ llk_gradient_one_step(
 
 \item{omega}{RACVM parameter omega}
 
-\item{error_dist}{Error distribution (not used for the moment)}
+\item{scheme}{Integration scheme: "Lie-Trotter" or "Strang"}
 
-\item{error_params}{Error distribution parameters (not used for the moment)}
+\item{push_next}{Push vector at next time step (length 2) - REQUIRED for Strang scheme}
 
-\item{scheme}{Integration scheme (not used here)}
-
-\item{ind_fixed_point}{Indices of fixed points (not used for the moment)}
+\item{potential_grad_next}{Gradient of potential at next time step (length 2) 
+- REQUIRED for Strang scheme}
 
 \item{verbose}{If TRUE, print detailed computation steps}
 }
@@ -52,6 +50,6 @@ llk_gradient_one_step(
 Numeric vector of length 3 with gradients w.r.t. tau, nu, omega
 }
 \description{
-Compute gradient of log-likelihood for one time step (works only for Lie-Trotter scheme 
-with splitting around 0)
+Compute gradient of log-likelihood for one time step
+Supports both Lie-Trotter and Strang schemes
 }

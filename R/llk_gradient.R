@@ -213,9 +213,9 @@ dRACVM_link=function(tau,omega,h) {
 }
 
 
-
-#' Compute gradient of log-likelihood for one time step (works only for Lie-Trotter scheme 
-#' with splitting around 0)
+#' Compute gradient of log-likelihood for one time step
+#' Supports both Lie-Trotter and Strang schemes
+#' 
 #' @param U_next State vector at next time step (X1, X2, V1, V2)
 #' @param U_prev State vector at previous time step (X1, X2, V1, V2)
 #' @param delta Time step size
@@ -224,52 +224,98 @@ dRACVM_link=function(tau,omega,h) {
 #' @param tau RACVM parameter tau
 #' @param nu RACVM parameter nu
 #' @param omega RACVM parameter omega
-#' @param error_dist Error distribution (not used for the moment)
-#' @param error_params Error distribution parameters (not used for the moment)
-#' @param scheme Integration scheme (not used here)
-#' @param ind_fixed_point Indices of fixed points (not used for the moment)
+#' @param scheme Integration scheme: "Lie-Trotter" or "Strang"
+#' @param push_next Push vector at next time step (length 2) - REQUIRED for Strang scheme
+#' @param potential_grad_next Gradient of potential at next time step (length 2) 
+#' - REQUIRED for Strang scheme
 #' @param verbose If TRUE, print detailed computation steps
 #' @return Numeric vector of length 3 with gradients w.r.t. tau, nu, omega
 #'    
-llk_gradient_one_step<- function(U_next,U_prev,delta,push,potential_grad,
-                                 tau,nu,omega,error_dist=NULL,error_params=NULL,
-                                 scheme="Lie-Trotter",ind_fixed_point=NULL,
-                                 verbose=FALSE) {
+llk_gradient_one_step <- function(U_next, U_prev, delta, push, potential_grad,
+                                  tau, nu, omega, scheme = "Lie-Trotter", 
+                                  push_next = NULL, potential_grad_next = NULL,
+                                  verbose = FALSE) {
   
-  Q_mat <- RACVM_cov(tau, nu, omega,delta)
-  T_mat <- RACVM_link(tau,omega,delta)
-  Q_derivs <- dRACVM_cov(tau, nu, omega,delta)
-  T_derivs <- dRACVM_link(tau, omega,delta)
+  # Get covariance and link matrices and their derivatives
+  Q_mat <- RACVM_cov(tau, nu, omega, delta)
+  T_mat <- RACVM_link(tau, omega, delta)
+  Q_derivs <- dRACVM_cov(tau, nu, omega, delta)
+  T_derivs <- dRACVM_link(tau, omega, delta)
   
-  # Compute g(U) = push + potential_grad
-  g <- c(0,0,push + potential_grad)
-  
-  # Mean vector
-  mu <- as.vector(T_mat %*% (U_prev - delta*g))
-  mu_derivs <- lapply(T_derivs,function(dT) {as.vector(dT%*%(U_prev-delta*g))})
-  
-  r <- U_next-mu
+  # Compute inverse of Q
   Q_inv <- solve(Q_mat)
-  Q_inv_derivs <- lapply(Q_derivs,function(dQ) {
-    Q_inv %*% dQ %*% Q_inv
+  
+  # invQ derivatives
+  Q_inv_derivs <- lapply(Q_derivs, function(dQ) {
+    Q_inv %*% dQ %*% Q_inv 
   })
   
-  log_det_Q_derivs <- sapply(Q_derivs,function(dQ) {
+  #determinant derivative
+  log_det_Q_derivs <- sapply(Q_derivs, function(dQ) {
     sum(diag(Q_inv %*% dQ))
   })
   
-  grad <- numeric(3)
-  for (i in 1:3) {
-    term1 <- -0.5 * log_det_Q_derivs[i]
-    term2 <- 0.5 * t(r) %*% Q_inv_derivs[[i]] %*% r
-    term3 <-  t(r) %*% Q_inv %*% mu_derivs[[i]]
-    grad[i] <- term1 + term2 + term3
+  if (scheme == "Strang") {
+    
+    # Check that required arguments are provided
+    if (is.null(push_next) || is.null(potential_grad_next)) {
+      stop("For Strang scheme, push_next and potential_grad_next must be provided")
+    }
+    
+    X_next <- U_next[1:2]
+    V_next <- U_next[3:4]
+    
+    V_tilde <- V_next + (delta/2) * (push_next + potential_grad_next)
+    U_tilde_next <- c(X_next, V_tilde)
+    
+    g_prev <- c(0, 0, push + potential_grad)
+    
+    U_hat_half <- U_prev - (delta/2) * g_prev
+    
+    mu <- as.vector(T_mat %*% U_hat_half)
+    
+    mu_derivs <- lapply(T_derivs, function(dT) {
+      as.vector(dT %*% U_hat_half)
+    })
+    
+    r <- U_tilde_next - mu
+    
+  } else if (scheme == "Lie-Trotter") {
+    
+    g <- c(0, 0, push + potential_grad)
+    
+    mu <- as.vector(T_mat %*% (U_prev - delta * g))
+    
+    mu_derivs <- lapply(T_derivs, function(dT) {
+      as.vector(dT %*% (U_prev - delta * g))
+    })
+    
+    r <- U_next - mu
+    
+  } else {
+    stop("scheme must be either 'Lie-Trotter' or 'Strang'")
   }
   
-  return (grad)
+  grad <- numeric(3)
+  names(grad) <- c("tau", "nu", "omega")
+  
+  for (i in 1:3) {
+    term1 <- -0.5 * log_det_Q_derivs[i]
+    
+    term2 <- 0.5 * t(r) %*% Q_inv_derivs[[i]] %*% r
+    
+    term3 <- t(r) %*% Q_inv %*% mu_derivs[[i]]
+    
+    grad[i] <- term1 + term2 + term3
+    
+    if (verbose) {
+      cat(sprintf("Parameter %s: term1=%.6f, term2=%.6f, term3=%.6f, total=%.6f\n",
+                  names(grad)[i], term1, term2, term3, grad[i]))
+    }
+  }
+  
+  return(grad)
 }
-
-
 
 #' Compute gradient of log-likelihood over entire trajectory
 #' 
@@ -282,17 +328,12 @@ llk_gradient_one_step<- function(U_next,U_prev,delta,push,potential_grad,
 #' @param tau RACVM parameter tau
 #' @param nu RACVM parameter nu
 #' @param omega RACVM parameter omega
-#' @param error_dist Error distribution (not used here)
-#' @param error_params Error distribution parameters (not used here)
-#' @param scheme Integration scheme (not used here)
-#' @param ind_fixed_point Indices of fixed points (not used here)
+#' @param scheme Integration scheme
 #' @param verbose If TRUE, print detailed computation steps
 #' @return Numeric vector of length 3 with gradients w.r.t. tau, nu, omega
 #' 
 llk_gradient = function(data,push_mat,potential_grad_mat,tau,nu,omega,
-                        error_dist=NULL,error_params=NULL,scheme="Lie-Trotter",
-                        ind_fixed_point=NULL,
-                        verbose=FALSE) {
+                        scheme="Lie-Trotter",verbose=FALSE) {
   
   n_steps <- nrow(data)
   total_grad <- matrix(0,ncol=3,nrow=n_steps-1)
@@ -303,7 +344,9 @@ llk_gradient = function(data,push_mat,potential_grad_mat,tau,nu,omega,
     U_next <- as.numeric(data[j+1,c("X1","X2","V1","V2")])
     delta <- as.numeric(data[j+1,"time"] - data[j,"time"])
     push <- push_mat[j,]
+    push_next <- push_mat[j,]
     potential_grad <- potential_grad_mat[j,]
+    potential_grad_next <- potential_grad_mat[j,]
     if (verbose) {
       cat("---- Step", j, "----\n")
       cat("delta:", delta, "\n")
@@ -314,9 +357,8 @@ llk_gradient = function(data,push_mat,potential_grad_mat,tau,nu,omega,
     }
     step_grad <- llk_gradient_one_step(U_next,U_prev,delta,push,
                                        potential_grad,
-                                       tau,nu,omega,
-                                       error_dist,error_params,scheme,
-                                       ind_fixed_point,
+                                       tau,nu,omega,scheme,
+                                       push_next,potential_grad_next,
                                        verbose)
     total_grad[j,] <- step_grad
   }

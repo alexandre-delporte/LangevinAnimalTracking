@@ -357,4 +357,23 @@ log_dmvnorm_chol <- function(x, mean, cholSigma) {
 }
 
 
+#' Log-density of multivariate t-distribution using Cholesky decomposition
+#' @param x Numeric vector of length d: point where to evaluate the density
+#' @param mean Numeric vector of length d: mean of the distribution
+#' @param chol Upper Cholesky factor of the scale matrix (d x d)
+#' @param df Degrees of freedom
+#' @return Log-density value (numeric)
+log_dmvt_chol <- function(x, mean, chol, df) {
+  d  <- length(x)
+  z  <- backsolve(chol, x - mean, transpose = TRUE)
+  delta <- sum(z^2)
+  
+  logdet <- 2 * sum(log(diag(chol)))
+  
+  lgamma((df + d) / 2) -
+    lgamma(df / 2) -
+    0.5 * (d * log(df * pi) + logdet) -
+    0.5 * (df + d) * log1p(delta / df)
+}
+
 

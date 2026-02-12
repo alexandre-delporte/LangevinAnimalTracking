@@ -3,7 +3,8 @@
 \name{forward_filtering_backward_sampling}
 \alias{forward_filtering_backward_sampling}
 \title{Forward filtering backward Sampling for penalised Langevin SDE 
-see Doucet et .al (2011) for the general algorithm}
+see Doucet et .al (2011) for the general algorithm.
+Currently, works for Strang but only with naive splitting}
 \usage{
 forward_filtering_backward_sampling(
   data,
@@ -57,5 +58,6 @@ array of dimension (n_samples, num_states, N) with the smoothed trajectories7
 }
 \description{
 Forward filtering backward Sampling for penalised Langevin SDE 
-see Doucet et .al (2011) for the general algorithm
+see Doucet et .al (2011) for the general algorithm.
+Currently, works for Strang but only with naive splitting
 }

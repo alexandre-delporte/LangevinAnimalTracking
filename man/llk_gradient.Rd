@@ -11,10 +11,7 @@ llk_gradient(
   tau,
   nu,
   omega,
-  error_dist = NULL,
-  error_params = NULL,
   scheme = "Lie-Trotter",
-  ind_fixed_point = NULL,
   verbose = FALSE
 )
 }
@@ -34,13 +31,7 @@ gradient of the potential at each time step}
 
 \item{omega}{RACVM parameter omega}
 
-\item{error_dist}{Error distribution (not used here)}
-
-\item{error_params}{Error distribution parameters (not used here)}
-
-\item{scheme}{Integration scheme (not used here)}
-
-\item{ind_fixed_point}{Indices of fixed points (not used here)}
+\item{scheme}{Integration scheme}
 
 \item{verbose}{If TRUE, print detailed computation steps}
 }

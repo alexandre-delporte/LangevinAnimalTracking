@@ -17,6 +17,7 @@ particle_filter2D(
   scheme = "Lie-Trotter",
   split_around_fixed_point = FALSE,
   ESS_threshold = 0.5,
+  proposal_weight = 0.5,
   verbose = FALSE
 )
 }
@@ -50,6 +51,10 @@ the underlying dynamic}
 
 \item{split_around_fixed_point}{Whether to split the SDE adaptatively around fixed point
 of the drift. Only works for mixture of gaussian potential.}
+
+\item{ESS_threshold}{Effective sample size threshold for resampling (default: 0.5)}
+
+\item{proposal_weight}{Weight in gaussian proposal (between 0 and 1)}
 
 \item{verbose}{Logical, whether to print progress messages (default: FALSE)}
 }

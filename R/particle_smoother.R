@@ -1,6 +1,7 @@
 
 #' Forward filtering backward Sampling for penalised Langevin SDE 
-#' see Doucet et .al (2011) for the general algorithm 
+#' see Doucet et .al (2011) for the general algorithm.
+#' Currently, works for Strang but only with naive splitting
 #' @param data A data.frame containing observations with columns: time, Y1, Y2
 #' @param n_samples number of smoothed trajectories to sample
 #' @param forward_filter output of the particle_filter2D function. If NULL, the function
@@ -27,7 +28,7 @@ forward_filtering_backward_sampling <-
   
   # forward filtering
   if (is.null(forward_filter)) {
-    forward_filter = particle_filter2D(data,sde_params,potential_grad,potential_params,
+    forward_filter = particle_filter2D(data,sde_params,potential_params,
                                      error_params,error_dist,
                                      polygon,U0,lambda,num_particles,scheme,
                                      split_around_fixed_point,verbose)
@@ -60,6 +61,7 @@ forward_filtering_backward_sampling <-
         
         U_prev <- particles[k, , j]
         delta <- data$time[j + 1] - data$time[j]
+        U_next<-smoothed_trajectories[m, , j + 1]
         
         if (scheme=="Lie-Trotter") {
           
@@ -78,9 +80,49 @@ forward_filtering_backward_sampling <-
           Q<-OU_solution$Q
           mean<-OU_solution$mean
           
-          backward_weights[k,j] <- weights[k, j]*dmvnorm(smoothed_trajectories[m, , j + 1],
+          backward_weights[k,j] <- weights[k, j]*dmvnorm(U_next,
                                                          mean = mean,
                                                          sigma = Q)
+        }
+        
+        if (scheme=="Strang") {
+          
+          if (split_around_fixed_point) {
+            ind_fixed_point_current <- ind_fixed_point[k,j]
+          } else {
+            ind_fixed_point_current <- NULL
+          }
+          
+          alpha <- potential_params$alpha; B <- potential_params$B
+          x_star <- potential_params$x_star
+          
+          
+          #ODE solution
+          U_hat<-solve_ODE_cpp(U_prev,delta/2,push_array[k,,j],potential_params,
+                               ind_fixed_point_current)
+          #SDE mean and covariance
+          OU_solution<-solve_SDE(U_hat,delta,tau,nu,omega,potential_params,
+                                 ind_fixed_point_current)
+          Q<-OU_solution$Q
+          mean<-OU_solution$mean
+          
+          X_next <- U_next[1:2]
+          V_next <- U_next[3:4]
+          
+          push_next<-compute_push(X_next,polygon,lambda)
+          potential_grad_next<-mix_gaussian_grad_cpp(X_next, x_star,
+                                                     list(B=B,alpha=alpha), 
+                                                     exclude=integer(0))
+          
+          V_tilde <- V_next + (delta/2) * (push_next + potential_grad_next)
+          U_tilde_next <- c(X_next, V_tilde)
+          
+          
+          backward_weights[k,j] <- weights[k, j]*dmvnorm(U_tilde_next,
+                                                         mean = mean,
+                                                         sigma = Q)
+          
+          
         }
       }
       

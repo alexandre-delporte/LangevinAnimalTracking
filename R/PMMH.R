@@ -109,20 +109,21 @@ PMMH_langevin <- function(data, theta_init, num_iterations, num_particles,
   
   # Run initial particle filter
   if (verbose) cat("Running initial particle filter...\n")
-  pf_init <- particle_filter2D(
-    data = data,
+  pf_init <- particle_filter2D_cpp(
+    observations = as.matrix(data[,c("time","Y1","Y2")]),
     sde_params = as.list(theta_init),
     potential_params = potential_params,
     error_params = error_params,
     error_dist = error_dist,
-    polygon = polygon,
+    polygon_coords = polygon@coords,
     U0 = U0,
     lambda = lambda,
     num_particles = num_particles,
-    scheme = scheme,
     split_around_fixed_point = FALSE,
+    scheme = scheme,
     ESS_threshold=ESS_threshold,
-    verbose = FALSE
+    proposal_weight=0.5,
+    verbose = FALSE,print_timing=FALSE
   )
   
   log_lik_current <- pf_init$loglik
@@ -136,7 +137,7 @@ PMMH_langevin <- function(data, theta_init, num_iterations, num_particles,
   
   # MCMC loop
   for (iter in 2:num_iterations) {
-    if (verbose && iter %% 10 == 0) {
+    if (verbose && iter %% 5 == 0) {
       cat("\n========================================\n")
       cat("PMMH iteration", iter, "/", num_iterations, "\n")
       cat("  Current theta:", round(theta_chain[iter-1, ], 4), "\n")
@@ -157,7 +158,7 @@ PMMH_langevin <- function(data, theta_init, num_iterations, num_particles,
       
       C_t <- sd_scaling * emp_cov + sd_scaling * epsilon * diag(p_free)
       
-      if (verbose && iter %% 10 == 0) {
+      if (verbose && iter %% 5 == 0) {
         cat("  Updated proposal covariance (diag):", round(diag(C_t), 6), "\n")
       }
     }
@@ -181,7 +182,7 @@ PMMH_langevin <- function(data, theta_init, num_iterations, num_particles,
     if ("nu" %in% freepar) theta_prop["nu"] <- exp(theta_trans_prop["nu"])
     if ("omega" %in% freepar) theta_prop["omega"] <- theta_trans_prop["omega"]
     
-    if (verbose && iter %% 10 == 0) {
+    if (verbose && iter %% 5 == 0) {
       cat("  Proposed theta:", round(theta_prop, 4), "\n")
     }
     
@@ -199,20 +200,22 @@ PMMH_langevin <- function(data, theta_init, num_iterations, num_particles,
     
     # Run particle filter with proposed parameters
     pf_prop <- tryCatch({
-      particle_filter2D(
-        data = data,
+      
+      particle_filter2D_cpp(
+        observations = as.matrix(data[,c("time","Y1","Y2")]),
         sde_params = as.list(theta_prop),
         potential_params = potential_params,
         error_params = error_params,
         error_dist = error_dist,
-        polygon = polygon,
+        polygon_coords = polygon@coords,
         U0 = U0,
         lambda = lambda,
         num_particles = num_particles,
-        scheme = scheme,
         split_around_fixed_point = FALSE,
-        ESS_threshold = ESS_threshold,
-        verbose = FALSE
+        scheme = scheme,
+        ESS_threshold=ESS_threshold,
+        proposal_weight=0.5,
+        verbose = FALSE,print_timing=FALSE
       )
     }, error = function(e) {
       if (verbose) cat("  Particle filter error:", e$message, "\n")
@@ -228,7 +231,7 @@ PMMH_langevin <- function(data, theta_init, num_iterations, num_particles,
     
     log_lik_prop <- pf_prop$loglik
     
-    if (verbose && iter %% 10 == 0) {
+    if (verbose && iter %% 5 == 0) {
       cat("  Proposed log-lik:", round(log_lik_prop, 2), "\n")
     }
     
@@ -236,19 +239,19 @@ PMMH_langevin <- function(data, theta_init, num_iterations, num_particles,
     log_alpha <- (log_lik_prop - log_lik_current) + 
       prior_log_ratio(theta_current, theta_prop)
     
-    if (verbose && iter %% 10 == 0) {
+    if (verbose && iter %% 5 == 0) {
       cat("  Log acceptance prob:", round(log_alpha, 4), "\n")
     }
     
     if (!is.finite(log_alpha)) {
       accept <- FALSE
-      if (verbose && iter %% 10 == 0) {
+      if (verbose && iter %% 5 == 0) {
         cat("  REJECTED (non-finite log-alpha)\n")
       }
     } else {
       u <- runif(1)
       accept <- (log(u) < log_alpha)
-      if (verbose && iter %% 10 == 0) {
+      if (verbose && iter %% 5 == 0) {
         if (accept) {
           cat("  *** ACCEPTED ***\n")
         } else {

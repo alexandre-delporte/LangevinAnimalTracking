@@ -596,6 +596,8 @@ static inline double compute_weight_from_cache(
     const arma::mat& invS_argos2,
     double log_p_argos,
     double log_1mp_argos,
+    double rho_argos,
+    double a_argos,
     // Cached intermediate values
     const ParticleIntermediate& cache
 ) {
@@ -643,8 +645,8 @@ static inline double compute_weight_from_cache(
       List error_params_local = List::create(
         Named("sigma_obs") = sigma_obs,
         Named("df") = df,
-        Named("rho") = 0.0,
-        Named("a") = 0.0,
+        Named("rho") = rho_argos,
+        Named("a") = a_argos,
         Named("p") = std::exp(log_p_argos)
       );
       local_llk = dmvt_mixture_cpp(y, U_pred.subvec(0, 1), error_params_local, true);
@@ -694,8 +696,8 @@ static inline double compute_weight_from_cache(
       List error_params_local = List::create(
         Named("sigma_obs") = sigma_obs,
         Named("df") = df,
-        Named("rho") = 0.0,
-        Named("a") = 0.0,
+        Named("rho") = rho_argos,
+        Named("a") = a_argos,
         Named("p") = std::exp(log_p_argos)
       );
       local_llk = dmvt_mixture_cpp(y, U_pred.subvec(0, 1), error_params_local, true);
@@ -761,6 +763,7 @@ static inline double compute_weight_from_cache(
 //'     \item ind_fixed_point: (if split_around_fixed_point=TRUE) Matrix of fixed point indices
 //'   }
 //' @export
+// [[Rcpp::depends(RcppArmadillo)]]
 // [[Rcpp::export]]
 List particle_filter2D_cpp(
     const arma::mat& observations,           
@@ -971,6 +974,7 @@ List particle_filter2D_cpp(
         error_dist, scheme,
         proposal_weight, sigma_obs, scale, df,
         invS_argos1, invS_argos2, log_p_argos, log_1mp_argos,
+        rho, a,
         particle_cache[k]);  // INPUT: use cached values
      }
     
@@ -1014,7 +1018,7 @@ List particle_filter2D_cpp(
         resampled_at(j) = true;
         if (verbose) Rcout << "  Resampling (ESS ratio = " << ess_ratio << ")\n";
         
-        // Systematic resampling - O(N) instead of O(N²)
+        // Systematic resampling - O(N) instead of O(NÂ²)
         arma::vec cum_weights = arma::cumsum(weights.col(j + 1));
         double u0 = R::runif(0.0, 1.0 / num_particles);
         
@@ -1073,6 +1077,3 @@ List particle_filter2D_cpp(
   
   return result;
 }
-
-
-

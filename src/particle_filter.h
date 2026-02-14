@@ -46,7 +46,6 @@ double compute_langevin_weight_cpp(const arma::vec& U_pred,
                                    double proposal_weight = 0.5,
                                    bool verbose = false);
                                    
-// Full particle filter implementation
 Rcpp::List particle_filter2D_cpp(const arma::mat& observations,const Rcpp::List& sde_params,
     const Rcpp::List& potential_params,
     const Rcpp::List& error_params,
@@ -59,7 +58,8 @@ Rcpp::List particle_filter2D_cpp(const arma::mat& observations,const Rcpp::List&
     bool split_around_fixed_point,
     double ESS_threshold,
     double proposal_weight,
-    bool verbose = false);
+    bool verbose = false,
+    bool print_timing = false);
 
 #endif // PARTICLE_FILTER_H
 

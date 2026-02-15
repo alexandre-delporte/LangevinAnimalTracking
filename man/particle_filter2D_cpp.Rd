@@ -19,7 +19,8 @@ particle_filter2D_cpp(
   split_around_fixed_point,
   ESS_threshold,
   proposal_weight,
-  verbose
+  verbose,
+  print_timing
 )
 }
 \arguments{
@@ -60,6 +61,8 @@ particle_filter2D_cpp(
 \item{proposal_weight}{Numeric between 0 and 1, weight attributed to the previous state in the Gaussian proposal}
 
 \item{verbose}{Logical, whether to print progress messages}
+
+\item{print_timing}{Logical, whether to print profiling timing results (default: FALSE)}
 }
 \value{
 List with elements:

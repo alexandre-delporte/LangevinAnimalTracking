@@ -32,6 +32,9 @@ laplace_approximation_student(
 \item{max_iter}{Integer. Maximum Newton iterations (default: 10).}
 
 \item{tol}{Numeric. Convergence tolerance (default: 1e-6).}
+
+\item{return_cov}{Logical. Whether to include 
+the posterior covariance matrix in the output (default: FALSE).}
 }
 \value{
 List with:
@@ -42,6 +45,5 @@ List with:
   - n_iter: Number of iterations used.
 }
 \description{
-Finds the Gaussian approximation to the posterior:
-p(U | U_prev, y) = Student-t(y | M*U, scale, df) × N(U | mean, Q)
+Finds the Gaussian approximation
 }

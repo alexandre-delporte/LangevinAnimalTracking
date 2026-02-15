@@ -69,6 +69,8 @@ Gaussian potentials for splitting scheme. Default NULL}
 
 \item{Q}{Precomputed process covariance matrix for solving the SDE. Default NULL}
 
+\item{proposal_weight}{weight in the gaussian proposal mean and covariance}
+
 \item{verbose}{Logical, whether to print progress messages (default: FALSE)}
 }
 \value{

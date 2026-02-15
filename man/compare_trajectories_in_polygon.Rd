@@ -25,6 +25,12 @@ compare_trajectories_in_polygon(
 \item{true_line_opacity}{Opacity for true trajectory line (0-1, default: 0.5)}
 
 \item{est_line_opacity}{Opacity for estimated trajectory line (0-1, default: 0.1)}
+
+\item{zoom_box}{Optional list with elements `xmin`, `xmax`, `ymin`, `ymax` 
+to zoom in on a specific area of the plot (default: NULL for no zoom)}
+
+\item{labels}{Character vector of length 2 for 
+legend labels of true and estimated paths}
 }
 \value{
 A ggplot object showing:

@@ -68,6 +68,9 @@ PMMH_langevin(
 
 \item{sd_scaling}{scaling parameter for Adaptive Metropolis (default is (2.4)^2 / d)}
 
+\item{ESS_threshold}{threshold for effective sample size to resample
+in the particle filter}
+
 \item{verbose}{logical. If TRUE, print information during the computation
 # @return A list with the following elements:
 - theta: matrix of parameter values at each iteration

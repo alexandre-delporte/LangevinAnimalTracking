@@ -18,336 +18,6 @@ struct ParticleIntermediate {
     List gaussian_proposal; // Gaussian proposal distribution
 };
 
-// [[Rcpp::export]]
-arma::vec propagate_langevin_particle_cpp(
-    const arma::vec& U,
-    const arma::vec& y,
-    const arma::mat& M,
-    double delta,
-    const arma::vec& push,
-    const List& potential_params,
-    double tau,
-    double nu,
-    double omega,
-    double lambda,
-    const std::string& error_dist,
-    const List& error_params,
-    const std::string& scheme,
-    const arma::mat& polygon_coords,
-    Nullable<int> ind_fixed_point,
-    Nullable<arma::mat> L_provided,
-    Nullable<arma::mat> Q_provided,
-    double proposal_weight,
-    bool verbose
-) {
-
-  arma::vec X = U.subvec(0,1);
-  arma::mat I2 = arma::eye<arma::mat>(2,2);
-
-  arma::vec U_next(4, arma::fill::zeros);
-
-  if (scheme == "Lie-Trotter") {
-
-    // --- ODE ---
-    arma::vec U_hat = solve_ODE_cpp(U, delta, push, potential_params, ind_fixed_point);
-
-    // --- SDE ---
-    List OU_solution = solve_SDE_cpp(U_hat, delta, tau, nu, omega,
-                                     potential_params,
-                                     ind_fixed_point, L_provided, Q_provided);
-    arma::mat Q = OU_solution["Q"];
-    arma::vec mean = OU_solution["mean"];
-
-    arma::mat cholQ = chol_cpp(Q);
-    arma::mat invQ  = chol2inv_cpp(cholQ);
-
-    // --- Gaussian proposal ---
-    List gaussian_proposal;
-
-    if (error_dist == "scaled_t") {
-      double scale = error_params["scale"];
-      double df    = error_params["df"];
-      gaussian_proposal = product_gaussian_cpp(invQ, ((df-2)/df)/ (scale*scale)*I2,
-                                               mean, y, M, proposal_weight);
-
-    } else if (error_dist == "normal") {
-      double sigma_obs = error_params["sigma_obs"];
-      gaussian_proposal = product_gaussian_cpp(invQ, 1/(sigma_obs*sigma_obs)*I2,
-                                               mean, y, M, proposal_weight);
-
-    } else if (error_dist == "argos") {
-      double df    = error_params["df"];
-      double sigma_obs = error_params["sigma_obs"];
-      double rho   = error_params["rho"];
-      double a     = error_params["a"];
-      double p     = error_params["p"];
-
-      arma::mat Sigma1 = sigma_obs*sigma_obs * arma::mat{{1, rho*sqrt(a)}, {rho*sqrt(a),1}};
-      arma::mat Sigma2 = sigma_obs*sigma_obs * arma::mat{{1, -rho*sqrt(a)}, {-rho*sqrt(a),1}};
-      arma::mat S1 = df/(df-2) * Sigma1;
-      arma::mat S2 = df/(df-2) * Sigma2;
-
-      arma::mat invS1 = arma::inv(S1);
-      arma::mat invS2 = arma::inv(S2);
-
-      double u = R::runif(0.0, 1.0);
-      arma::mat invS = (u < p) ? invS1 : invS2;
-
-      gaussian_proposal = product_gaussian_cpp(invQ, invS, mean, y, M, proposal_weight);
-    }
-
-    if (verbose) {
-      Rcout << "proposal mean: " << as<arma::vec>(gaussian_proposal["mean"]).t() << "\n";
-    }
-
-    // --- Sample next state ---
-    arma::vec z = arma::randn<arma::vec>(4);
-    U_next = as<arma::vec>(gaussian_proposal["mean"]) +
-             as<arma::mat>(gaussian_proposal["chol"]) * z;
-
-  } else if (scheme == "Strang") {
-
-    // --- Extract potential parameters ---
-    arma::vec alpha = potential_params["alpha"];
-    List B = potential_params["B"];
-    arma::mat x_star = potential_params["x_star"];
-
-    // --- ODE half-step ---
-    arma::vec U_hat = solve_ODE_cpp(U, delta/2.0, push, potential_params, ind_fixed_point);
-
-    // --- SDE ---
-    List OU_solution = solve_SDE_cpp(U_hat, delta, tau, nu, omega,
-                                     potential_params,
-                                     ind_fixed_point, L_provided, Q_provided);
-    arma::mat Q = OU_solution["Q"];
-    arma::vec mean = OU_solution["mean"];
-
-    arma::mat Qxx = Q.submat(0,0,1,1);
-    arma::mat cholQxx = chol_cpp(Qxx);
-    arma::mat invQxx = chol2inv_cpp(cholQxx);
-
-    arma::mat Q_v_cond_x = Q.submat(2,2,3,3) -
-                           Q.submat(2,0,3,1) * invQxx * Q.submat(0,2,1,3);
-    arma::mat cholQ_v_cond_x = chol_cpp(Q_v_cond_x);
-
-    // --- Propagate position ---
-    List gaussian_proposal;
-    arma::vec X_next(2);
-
-    if (error_dist == "scaled_t") {
-      double scale = error_params["scale"];
-      double df    = error_params["df"];
-      gaussian_proposal = product_gaussian_cpp(invQxx, ((df-2)/df)/(scale*scale)*I2,
-                                               mean.subvec(0,1), y, I2, proposal_weight);
-
-    } else if (error_dist == "normal") {
-      double sigma_obs = error_params["sigma_obs"];
-      gaussian_proposal = product_gaussian_cpp(invQxx, 1/(sigma_obs*sigma_obs)*I2,
-                                               mean.subvec(0,1), y, I2, proposal_weight);
-
-    } else if (error_dist == "argos") {
-      double df    = error_params["df"];
-      double sigma_obs = error_params["sigma_obs"];
-      double rho   = error_params["rho"];
-      double a     = error_params["a"];
-      double p     = error_params["p"];
-
-      arma::mat Sigma1 = sigma_obs*sigma_obs * arma::mat{{1, rho*sqrt(a)}, {rho*sqrt(a),1}};
-      arma::mat Sigma2 = sigma_obs*sigma_obs * arma::mat{{1, -rho*sqrt(a)}, {-rho*sqrt(a),1}};
-      arma::mat S1 = df/(df-2) * Sigma1;
-      arma::mat S2 = df/(df-2) * Sigma2;
-
-      arma::mat invS1 = arma::inv(S1);
-      arma::mat invS2 = arma::inv(S2);
-
-      double u = R::runif(0.0, 1.0);
-      arma::mat invS = (u < p) ? invS1 : invS2;
-
-      gaussian_proposal = product_gaussian_cpp(invQxx, invS,
-                                               mean.subvec(0,1), y, I2, proposal_weight);
-    }
-
-    X_next = as<arma::vec>(gaussian_proposal["mean"]) +
-             as<arma::mat>(gaussian_proposal["chol"]) * arma::randn<arma::vec>(2);
-
-    // --- Compute push ---
-    arma::vec push_next = compute_push_cpp(X_next, polygon_coords, lambda);
-
-    // --- Gradient / nonlinear term ---
-    arma::vec grad_term(2);
-    if (ind_fixed_point.isNotNull()) {
-      int l = as<int>(ind_fixed_point) - 1;
-      arma::mat B_l = B[l];
-      double alpha_l = alpha[l];
-      arma::vec x_star_l = x_star.row(l).t();
-
-      double e_l_next = std::exp(-arma::dot(X_next - x_star_l,
-                                            B_l * (X_next - x_star_l)));
-
-      arma::vec grad = mix_gaussian_grad_cpp(X_next, x_star, potential_params,
-                                            IntegerVector::create(l+1));
-      grad_term = push_next + grad + 2.0*alpha_l*(e_l_next-1.0) * (B_l*(X_next - x_star_l));
-
-    } else {
-      arma::vec grad = mix_gaussian_grad_cpp(X_next, x_star, potential_params, IntegerVector());
-      grad_term = push_next + grad;
-    }
-
-    // --- Propagate velocity ---
-    arma::vec m_v_cond_x = mean.subvec(2,3) +
-                           Q.submat(2,0,3,1) * invQxx * (X_next - mean.subvec(0,1)) -
-                           delta/2.0 * grad_term;
-
-    arma::vec V_next = m_v_cond_x + cholQ_v_cond_x * arma::randn<arma::vec>(2);
-
-    U_next = arma::join_vert(X_next, V_next);
-  }
-
-  return U_next;
-}
-
-
-
-// [[Rcpp::depends(RcppArmadillo)]]
-// [[Rcpp::export]]
-
-
-double compute_langevin_weight_cpp(const arma::vec& U_pred,
-                                   const arma::vec& U_prev,
-                                   const arma::vec& y,
-                                   const arma::mat& M,
-                                   double delta,
-                                   const arma::vec& push,
-                                   const List& potential_params,
-                                   double tau,
-                                   double nu,
-                                   double omega,
-                                   const std::string& error_dist,
-                                   const List& error_params,
-                                   const std::string& scheme,
-                                   Nullable<int> ind_fixed_point,
-                                   Nullable<arma::mat> L,
-                                   Nullable<arma::mat> Q,
-                                   double proposal_weight,
-                                   bool verbose) {
-
-  // --- Identity 2x2 ---
-  arma::mat I2 = arma::eye(2,2);
-
-  // --- Step 1: Solve ODE ---
-  arma::vec U_hat;
-  if (scheme == "Lie-Trotter") {
-    U_hat = solve_ODE_cpp(U_prev, delta, push, potential_params, ind_fixed_point);
-  } else { // Strang
-    U_hat = solve_ODE_cpp(U_prev, delta / 2.0, push, potential_params, ind_fixed_point);
-  }
-
-  // --- Step 2: Solve SDE ---
-  List OU_solution = solve_SDE_cpp(U_hat, delta, tau, nu, omega, potential_params,
-                                   ind_fixed_point, L, Q);
-
-  arma::mat Q_mat = OU_solution["Q"];
-  arma::vec mean  = OU_solution["mean"];
-
-  arma::mat cholQ  = chol_cpp(Q_mat);
-  arma::mat invQ   = chol2inv_cpp(cholQ);
-  arma::mat Qxx, cholQxx, invQxx;
-
-  if (scheme == "Strang") {
-    Qxx = Q_mat.submat(0,0,1,1);
-    cholQxx = chol_cpp(Qxx);
-    invQxx  = chol2inv_cpp(cholQxx);
-  }
-
-  double log_weight = 0.0;
-  double local_llk = 0.0;
-  double log_pred_density = 0.0;
-  double log_prop_density = 0.0;
-
-  // --- Step 3: Compute proposal depending on error distribution ---
-  if (error_dist == "scaled_t") {
-    double scale = as<double>(error_params["scale"]);
-    double df    = as<double>(error_params["df"]);
-
-    List gaussian_proposal = product_gaussian_cpp(invQ,
-                                                  (df-2)/df/scale/scale * I2,
-                                                  mean, y, M, proposal_weight);
-
-    local_llk = dscaledt_cpp(y[0], U_pred[0], scale, df, true) +
-                dscaledt_cpp(y[1], U_pred[1], scale, df, true);
-
-    log_pred_density = log_dmvnorm_chol_cpp(U_pred, mean, cholQ);
-    log_prop_density = log_dmvnorm_chol_cpp(U_pred,
-                                            gaussian_proposal["mean"],
-                                            gaussian_proposal["chol"]);
-
-    log_weight = local_llk + log_pred_density - log_prop_density;
-  }
-  else if (error_dist == "normal") {
-    double sigma_obs = as<double>(error_params["sigma_obs"]);
-
-    List gaussian_proposal;
-    if (scheme == "Lie-Trotter") {
-      gaussian_proposal = product_gaussian_cpp(invQ, (1.0/(sigma_obs*sigma_obs)) * I2,
-                                               mean, y, M, proposal_weight);
-      local_llk = log_dmvnorm_chol_cpp(y, U_pred.subvec(0,1), sigma_obs*I2);
-      log_pred_density = log_dmvnorm_chol_cpp(U_pred, mean, cholQ);
-      log_prop_density = log_dmvnorm_chol_cpp(U_pred,
-                                              gaussian_proposal["mean"],
-                                              gaussian_proposal["chol"]);
-    } else {
-      gaussian_proposal = product_gaussian_cpp(invQxx, (1.0/(sigma_obs*sigma_obs)) * I2,
-                                               mean.subvec(0,1), y, I2, proposal_weight);
-      local_llk = log_dmvnorm_chol_cpp(y, U_pred.subvec(0,1), sigma_obs*I2);
-      log_pred_density = log_dmvnorm_chol_cpp(U_pred.subvec(0,1), mean.subvec(0,1), cholQxx);
-      log_prop_density = log_dmvnorm_chol_cpp(U_pred.subvec(0,1),
-                                              gaussian_proposal["mean"],
-                                              gaussian_proposal["chol"]);
-    }
-    log_weight = local_llk + log_pred_density - log_prop_density;
-  }
-  else if (error_dist == "argos") {
-    double df        = as<double>(error_params["df"]);
-    double sigma_obs = as<double>(error_params["sigma_obs"]);
-    double rho       = as<double>(error_params["rho"]);
-    double a         = as<double>(error_params["a"]);
-    double p         = as<double>(error_params["p"]);
-
-    arma::mat Sigma1 = sigma_obs*sigma_obs * arma::mat{{1, rho*std::sqrt(a)},
-                                                       {rho*std::sqrt(a),1}};
-    arma::mat Sigma2 = sigma_obs*sigma_obs * arma::mat{{1, -rho*std::sqrt(a)},
-                                                       {-rho*std::sqrt(a),1}};
-
-    arma::mat S1 = df/(df-2.0) * Sigma1;
-    arma::mat S2 = df/(df-2.0) * Sigma2;
-
-    List gaussian_proposal1 = product_gaussian_cpp(invQ, chol2inv_cpp(chol_cpp(S1)),
-                                                   mean, y, M, proposal_weight);
-    List gaussian_proposal2 = product_gaussian_cpp(invQ, chol2inv_cpp(chol_cpp(S2)),
-                                                   mean, y, M, proposal_weight);
-
-    local_llk = dmvt_mixture_cpp(y, U_pred.subvec(0,1), error_params, true);
-    log_pred_density = log_dmvnorm_chol_cpp(U_pred, mean, cholQ);
-
-    double l1 = std::log(p) +
-                log_dmvnorm_chol_cpp(U_pred, gaussian_proposal1["mean"], gaussian_proposal1["chol"]);
-    double l2 = std::log(1-p) +
-                log_dmvnorm_chol_cpp(U_pred, gaussian_proposal2["mean"], gaussian_proposal2["chol"]);
-
-    double m = std::max(l1,l2);
-    log_prop_density = m + std::log(std::exp(l1-m) + std::exp(l2-m));
-    log_weight = local_llk + log_pred_density - log_prop_density;
-  }
-
-  if (verbose) {
-    Rcout << "local_llk = " << std::exp(local_llk)
-          << ", pred_density = " << std::exp(log_pred_density)
-          << ", prop_density = " << std::exp(log_prop_density) << std::endl;
-  }
-
-  return std::exp(log_weight);
-}
-
 // Propagate particle and cache intermediate computations for weight calculation
 // Properly handles both Lie-Trotter and Strang schemes
 static inline arma::vec propagate_particle_with_cache(
@@ -596,8 +266,6 @@ static inline double compute_weight_from_cache(
     const arma::mat& invS_argos2,
     double log_p_argos,
     double log_1mp_argos,
-    double rho_argos,
-    double a_argos,
     // Cached intermediate values
     const ParticleIntermediate& cache
 ) {
@@ -645,8 +313,8 @@ static inline double compute_weight_from_cache(
       List error_params_local = List::create(
         Named("sigma_obs") = sigma_obs,
         Named("df") = df,
-        Named("rho") = rho_argos,
-        Named("a") = a_argos,
+        Named("rho") = 0.0,
+        Named("a") = 0.0,
         Named("p") = std::exp(log_p_argos)
       );
       local_llk = dmvt_mixture_cpp(y, U_pred.subvec(0, 1), error_params_local, true);
@@ -696,8 +364,8 @@ static inline double compute_weight_from_cache(
       List error_params_local = List::create(
         Named("sigma_obs") = sigma_obs,
         Named("df") = df,
-        Named("rho") = rho_argos,
-        Named("a") = a_argos,
+        Named("rho") = 0.0,
+        Named("a") = 0.0,
         Named("p") = std::exp(log_p_argos)
       );
       local_llk = dmvt_mixture_cpp(y, U_pred.subvec(0, 1), error_params_local, true);
@@ -718,7 +386,6 @@ static inline double compute_weight_from_cache(
   
   return std::exp(log_weight);
 }
-
 
 //' Run particle filter algorithm for the Langevin diffusion with specified measurement errors
 //' and splitting schemes
@@ -747,6 +414,7 @@ static inline double compute_weight_from_cache(
 //' @param ESS_threshold Numeric between 0 and 1, threshold on effective sample size for resampling
 //' @param proposal_weight Numeric between 0 and 1, weight attributed to the previous state in the Gaussian proposal
 //' @param verbose Logical, whether to print progress messages
+//' @param print_timing Logical, whether to print profiling timing results (default: FALSE)
 //' 
 //' @return List with elements:
 //'   \itemize{
@@ -763,7 +431,6 @@ static inline double compute_weight_from_cache(
 //'     \item ind_fixed_point: (if split_around_fixed_point=TRUE) Matrix of fixed point indices
 //'   }
 //' @export
-// [[Rcpp::depends(RcppArmadillo)]]
 // [[Rcpp::export]]
 List particle_filter2D_cpp(
     const arma::mat& observations,           
@@ -779,7 +446,8 @@ List particle_filter2D_cpp(
     bool split_around_fixed_point,
     double ESS_threshold,
     double proposal_weight,
-    bool verbose
+    bool verbose,
+    bool print_timing
 ) {
   
   // Initialize timing
@@ -974,7 +642,6 @@ List particle_filter2D_cpp(
         error_dist, scheme,
         proposal_weight, sigma_obs, scale, df,
         invS_argos1, invS_argos2, log_p_argos, log_1mp_argos,
-        rho, a,
         particle_cache[k]);  // INPUT: use cached values
      }
     
@@ -1018,7 +685,7 @@ List particle_filter2D_cpp(
         resampled_at(j) = true;
         if (verbose) Rcout << "  Resampling (ESS ratio = " << ess_ratio << ")\n";
         
-        // Systematic resampling - O(N) instead of O(NÂ²)
+        // Systematic resampling 
         arma::vec cum_weights = arma::cumsum(weights.col(j + 1));
         double u0 = R::runif(0.0, 1.0 / num_particles);
         
@@ -1054,8 +721,10 @@ List particle_filter2D_cpp(
   
   if (verbose) Rcout << "Particle filtering complete.\n";
   
-  // Print timing results
-  global_timer.print_timings();
+  // Print timing results only if requested
+  if (print_timing) {
+    global_timer.print_timings();
+  }
   
   // Prepare output
   List result = List::create(
@@ -1077,3 +746,5 @@ List particle_filter2D_cpp(
   
   return result;
 }
+
+

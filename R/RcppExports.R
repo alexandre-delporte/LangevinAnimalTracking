@@ -5,14 +5,50 @@ solve_ODE_cpp <- function(U, delta, push, potential_params, ind_fixed_point) {
     .Call(`_LangevinAnimalTracking_solve_ODE_cpp`, U, delta, push, potential_params, ind_fixed_point)
 }
 
-propagate_langevin_particle_cpp <- function(U, y, M, delta, push, potential_params, tau, nu, omega, lambda, error_dist, error_params, scheme, polygon_coords, ind_fixed_point, L_provided, Q_provided, proposal_weight, verbose) {
-    .Call(`_LangevinAnimalTracking_propagate_langevin_particle_cpp`, U, y, M, delta, push, potential_params, tau, nu, omega, lambda, error_dist, error_params, scheme, polygon_coords, ind_fixed_point, L_provided, Q_provided, proposal_weight, verbose)
-}
-
-compute_langevin_weight_cpp <- function(U_pred, U_prev, y, M, delta, push, potential_params, tau, nu, omega, error_dist, error_params, scheme, ind_fixed_point, L, Q, proposal_weight, verbose) {
-    .Call(`_LangevinAnimalTracking_compute_langevin_weight_cpp`, U_pred, U_prev, y, M, delta, push, potential_params, tau, nu, omega, error_dist, error_params, scheme, ind_fixed_point, L, Q, proposal_weight, verbose)
-}
-
+#' Run particle filter algorithm for the Langevin diffusion with specified measurement errors
+#' and splitting schemes
+#' 
+#' @param observations Matrix with dimensions N x 3: time, Y1, Y2
+#' @param sde_params List with elements: tau (persistence), nu (velocity scale), omega (rotation)
+#' @param potential_params List with elements:
+#'   \itemize{
+#'     \item alpha: Numeric vector of mixture weights
+#'     \item B: List of precision matrices
+#'     \item x_star: Matrix of fixed point coordinates
+#'   }
+#' @param error_params List of parameters for the measurement error distribution (contents depend on error_dist):
+#'   \itemize{
+#'     \item For "normal": sigma_obs (observation error standard deviation)
+#'     \item For "scaled_t": scale and df (degrees of freedom)
+#'     \item For "argos": sigma_obs, df, rho, a, p
+#'   }
+#' @param error_dist String specifying error distribution: "normal", "scaled_t", or "argos"
+#' @param polygon_coords Matrix of polygon boundary coordinates (N x 2)
+#' @param U0 Numeric vector of initial state (length 4: position and velocity)
+#' @param lambda Numeric, penalization parameter (positive number, Inf for no penalization)
+#' @param num_particles Integer, number of particles to use in the filter
+#' @param scheme String, splitting scheme: "Lie-Trotter" or "Strang"
+#' @param split_around_fixed_point Logical, whether to split around fixed points
+#' @param ESS_threshold Numeric between 0 and 1, threshold on effective sample size for resampling
+#' @param proposal_weight Numeric between 0 and 1, weight attributed to the previous state in the Gaussian proposal
+#' @param verbose Logical, whether to print progress messages
+#' @param print_timing Logical, whether to print profiling timing results (default: FALSE)
+#' 
+#' @return List with elements:
+#'   \itemize{
+#'     \item particles: Array of particles (num_particles x 4 x N)
+#'     \item weights: Matrix of normalized weights (num_particles x N)
+#'     \item total_weights: Vector of sum of unnormalized weights at each time step
+#'     \item loglik: Estimated log-likelihood
+#'     \item loglik_vector: Estimated log-likelihood at each time step
+#'     \item push: Array of inward pushes for each particle at each time step
+#'     \item ancestors: Matrix of ancestor indices
+#'     \item resampled_at: Logical vector indicating steps where resampling was performed
+#'     \item ess_history: Vector of ESS at each time step
+#'     \item timing: List of timing information for code profiling
+#'     \item ind_fixed_point: (if split_around_fixed_point=TRUE) Matrix of fixed point indices
+#'   }
+#' @export
 particle_filter2D_cpp <- function(observations, sde_params, potential_params, error_params, error_dist, polygon_coords, U0, lambda, num_particles, scheme, split_around_fixed_point, ESS_threshold, proposal_weight, verbose, print_timing) {
     .Call(`_LangevinAnimalTracking_particle_filter2D_cpp`, observations, sde_params, potential_params, error_params, error_dist, polygon_coords, U0, lambda, num_particles, scheme, split_around_fixed_point, ESS_threshold, proposal_weight, verbose, print_timing)
 }

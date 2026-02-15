@@ -20,6 +20,8 @@
 #' @param t0 number of iterations before starting adaptation of the proposal covariance
 #' @param epsilon small constant to ensure positive definiteness in covariance adaptation
 #' @param sd_scaling scaling parameter for Adaptive Metropolis (default is (2.4)^2 / d)
+#' @param ESS_threshold threshold for effective sample size to resample
+#'  in the particle filter
 #' @param verbose logical. If TRUE, print information during the computation
 
 #' # @return A list with the following elements:

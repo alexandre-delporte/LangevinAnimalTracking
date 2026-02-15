@@ -35,9 +35,7 @@ product_gaussian<-function(P1,P2,mean1,mean2,M) {
 
 #' Laplace approximation for Student-t observation likelihood
 #'
-#' Finds the Gaussian approximation to the posterior:
-#' p(U | U_prev, y) = Student-t(y | M*U, scale, df) × N(U | mean, Q)
-#'
+#' Finds the Gaussian approximation 
 #' @param y Numeric vector of length 2. Observation.
 #' @param mean Numeric vector of length 4
 #' @param Q Matrix 4x4. Covariance
@@ -46,6 +44,8 @@ product_gaussian<-function(P1,P2,mean1,mean2,M) {
 #' @param df Numeric. Degrees of freedom of Student-t.
 #' @param max_iter Integer. Maximum Newton iterations (default: 10).
 #' @param tol Numeric. Convergence tolerance (default: 1e-6).
+#' @param return_cov Logical. Whether to include 
+#' the posterior covariance matrix in the output (default: FALSE).
 #'
 #' @return List with:
 #'   - mean: Posterior mode (length 4)
@@ -186,7 +186,6 @@ plot_student_laplace_comparison <- function(
   
   grid <- expand.grid(x1 = x1, x2 = x2)
   
-  ## ---- True target: Gaussian × Student-t ----
   log_prior <- mvtnorm::dmvnorm(
     as.matrix(grid),
     mean = x_prev_mean,
@@ -223,7 +222,7 @@ plot_student_laplace_comparison <- function(
     x1, x2, z_true,
     col = hcl.colors(100, "viridis"),
     zlim = c(0, zmax),
-    main = "True target\nGaussian × Student-t",
+    main = "True target",
     xlab = expression(X[1]),
     ylab = expression(X[2])
   )
@@ -315,7 +314,7 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
                      ind_fixed_point)
     
     #SDE mean and covariance
-    OU_solution<-solve_SDE_cpp(U_hat,delta,tau,nu,omega,potential_params,
+    OU_solution<-solve_SDE(U_hat,delta,tau,nu,omega,potential_params,
               ind_fixed_point,L,Q)
     Q<-OU_solution$Q
     mean<-OU_solution$mean
@@ -376,7 +375,7 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
     U_hat<-solve_ODE_cpp(U,delta/2,push,potential_params,
                      ind_fixed_point)
     #SDE mean and covariance
-    OU_solution<-solve_SDE_cpp(U_hat,delta,tau,nu,omega,potential_params,
+    OU_solution<-solve_SDE(U_hat,delta,tau,nu,omega,potential_params,
                            ind_fixed_point,L,Q)
     Q<-OU_solution$Q
     mean<-OU_solution$mean
@@ -485,6 +484,7 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
 #' @param verbose Logical, whether to print progress messages (default: FALSE)
 #' @param L Precomputed observation link matrix for solving the SDE. Default NULL
 #' @param Q Precomputed process covariance matrix for solving the SDE. Default NULL
+#' @param proposal_weight weight in the gaussian proposal mean and covariance
 #' 
 #'@return Numeric vector of length 4. The propagated state \eqn{U_{t+\Delta}}
 
@@ -504,7 +504,7 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
                        potential_params, ind_fixed_point)
     
     ## SDE mean and covariance
-    OU_solution <- solve_SDE_cpp(U_hat, delta, tau, nu, omega,
+    OU_solution <- solve_SDE(U_hat, delta, tau, nu, omega,
                              potential_params, ind_fixed_point,L,Q)
     Q    <- OU_solution$Q
     mean <- OU_solution$mean
@@ -617,7 +617,7 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
                        potential_params, ind_fixed_point)
     
     ## SDE
-    OU_solution <- solve_SDE_cpp(U_hat, delta, tau, nu, omega,
+    OU_solution <- solve_SDE(U_hat, delta, tau, nu, omega,
                              potential_params, ind_fixed_point,L,Q)
     
     Q    <- OU_solution$Q
@@ -776,13 +776,12 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
 #' }
 #' @export
 #'
-
 particle_filter2D <- function(data,sde_params,potential_params=NULL,
                               error_params,error_dist="normal",
                               polygon,U0,lambda,num_particles,scheme="Lie-Trotter",
-                              split_around_fixed_point=FALSE,ESS_threshold=0.5,
+                              split_around_fixed_point=FALSE,ESS_threshold=0.95,
                               proposal_weight=0.5,verbose=FALSE) {
- 
+  
   
   cat("Running particle filter with params:", as.numeric(sde_params), "\n")
   # Number of observations
@@ -804,7 +803,7 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
   process_cov <- rbind(
     cbind(matrix(0,2,2), matrix(0,2,2)),
     cbind(matrix(0,2,2), 4*nu^2/pi/tau*I2))
-
+  
   # Initialize particles and weights
   particles <- array(NA, dim = c(num_particles, length(U0), N))
   weights <- matrix(0, nrow = num_particles, ncol = N)
@@ -823,7 +822,7 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
   
   # Track index of fixed points to use in splitting
   if (split_around_fixed_point) {
-  ind_fixed_point_mat<-matrix(0,nrow=num_particles,ncol=N-1)
+    ind_fixed_point_mat<-matrix(0,nrow=num_particles,ncol=N-1)
   } else { ind_fixed_point_mat<-NULL}
   
   # Track ancestors in resampling
@@ -831,15 +830,15 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
   
   # Initialize particles with noise
   R0<- rbind(cbind(diag(0.1^2,2),matrix(0,2,2)),
-               cbind(matrix(0,2,2),diag(0.5^2,2)))
+             cbind(matrix(0,2,2),diag(0.5^2,2)))
   
   particles[, , 1]<-matrix(replicate(num_particles,
-                                        U0+sqrt(R0)%*%rnorm(length(U0))),
+                                     U0+sqrt(R0)%*%rnorm(length(U0))),
                            ncol=length(U0),nrow=num_particles,byrow=TRUE)
   
   # Initialize equal weights
   weights[, 1] <- 1/num_particles
-
+  
   total_weights[1] <- sum(weights[, 1])
   ess_history[1] <- 1 / sum(weights[,1]^2)
   
@@ -854,10 +853,10 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
   L_list<-vector("list",num_particles)
   Q_list<-vector("list",num_particles)
   if (max(deltas)-min(deltas)<1e-6 && !split_around_fixed_point) { 
-
-      L_list<-rep(list(RACVM_link(tau,omega,deltas[1])),num_particles)
-      Q_list<-rep(list(RACVM_cov(tau,nu,omega,deltas[1])),num_particles)
-    }
+    
+    L_list<-rep(list(RACVM_link(tau,omega,deltas[1])),num_particles)
+    Q_list<-rep(list(RACVM_cov(tau,nu,omega,deltas[1])),num_particles)
+  }
   
   # Loop over all time steps
   for (j in 1:(N - 1)) {
@@ -875,7 +874,7 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
     # Prediction step
     if (verbose) cat("Prediction step...\n")
     
-
+    
     for (k in 1:num_particles) {
       
       # Get ancestor
@@ -889,21 +888,21 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
       # Find fixed point index for splitting, and update OU covariance and link matrices
       if (split_around_fixed_point) {
         ind_fixed_point <- choose_center_cpp(U_prev[1:2],x_star, 
-                      list(B=B,alpha=alpha))
+                                             list(B=B,alpha=alpha))
         ind_fixed_point_mat[k,j]<- ind_fixed_point
         
         # if constant time steps, and fixed point is changed, update L and Q
         if (max(deltas)-min(deltas)<1e-6 && (j==1 || ind_fixed_point!=ind_fixed_point_mat[k,j-1])) {
           
           #cat("Particle", k, "switching to fixed point", ind_fixed_point,"at time",j,"\n")
-
+          
           #extract parameters for the new center
           l<-ind_fixed_point
           B_l<-B[[l]];alpha_l<-alpha[l];x_star_l<-x_star[l,]
-        
-        
+          
+          
           A<-rbind(cbind(matrix(0,ncol=2,nrow=2),I2),
-                  cbind(-2*alpha_l*B_l,-matrix(c(1/tau,-omega,omega,1/tau),
+                   cbind(-2*alpha_l*B_l,-matrix(c(1/tau,-omega,omega,1/tau),
                                                 nrow=2,byrow=TRUE)))
           #link and covariance matrix
           L_list[[k]]<-expm(A*delta)
@@ -912,20 +911,20 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
       }
       else { ind_fixed_point <- NULL
       }
-    
-      U_next<-propagate_langevin_particle_cpp(U_prev,y,M,delta,push,
-                                          potential_params,tau,nu,omega,lambda,
-                                          error_dist,error_params,
-                                          scheme,polygon@coords,ind_fixed_point,
-                                          L_list[[k]],
-                                          Q_list[[k]],proposal_weight,
-                                          verbose=FALSE)
+      
+      U_next<-propagate_langevin_particle(U_prev,y,M,delta,push,
+                                              potential_params,tau,nu,omega,lambda,
+                                              error_dist,error_params,
+                                              scheme,polygon,ind_fixed_point,
+                                              L_list[[k]],
+                                              Q_list[[k]],proposal_weight,
+                                              verbose=FALSE)
       
       particles[k, , j + 1]=U_next
       
     }
     
-  
+    
     if (verbose) cat("Prediction step complete.\n")
     
     # Correction step: Update weights based on observation likelihood
@@ -939,22 +938,22 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
       ind_fixed_point<-if (split_around_fixed_point) ind_fixed_point_mat[k,j]
       else NULL  #ind of fixed point for splitting
       
-      weights[k, j + 1] <- compute_langevin_weight_cpp(U_pred,U_prev,y,M,
-                                                   delta,push,
-                                                   potential_params,tau,nu,omega,
-                                                   error_dist,error_params,
-                                                   scheme,
-                                                   ind_fixed_point,
-                                                   L_list[[k]],
-                                                   Q_list[[k]],
-                                                   proposal_weight,verbose=FALSE)
-    
+      weights[k, j + 1] <- compute_langevin_weight(U_pred,U_prev,y,M,
+                                                       delta,push,
+                                                       potential_params,tau,nu,omega,
+                                                       error_dist,error_params,
+                                                       scheme,
+                                                       ind_fixed_point,
+                                                       L_list[[k]],
+                                                       Q_list[[k]],
+                                                       proposal_weight,verbose=FALSE)
+      
     }
-  
+    
     # Store total weight before normalization
     total_weights[j + 1] <- sum(weights[, j + 1])
     
-  
+    
     
     loglik <- loglik + log(total_weights[j + 1]) - log(num_particles)
     loglik_vector[j]<- log(total_weights[j + 1]) - log(num_particles)
@@ -977,25 +976,28 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
     }
     
     # Resampling step
-     if (j < N - 1) {
-       
-       ess_ratio <- ess_history[j+1] / num_particles
-       
-       if (ess_ratio < ESS_threshold) {
-         # Resample
-         resample_indices <- sample(1:num_particles, size = num_particles,
-                                    replace=TRUE, prob = weights[,j+1])
-         resampled_at[j] <- TRUE
-         if (verbose) cat("  Resampling (ESS ratio = ", round(ess_ratio, 3), ")\n")
-       } else {
-         resample_indices <- 1:num_particles
-         resampled_at[j] <- FALSE
-         if (verbose) cat("  No resampling (ESS ratio = ", round(ess_ratio, 3), ")\n")
-       }
-       particles[, , j + 1] <- particles[resample_indices, , j + 1]
-       ancestors[, j] <- resample_indices
-       weights[, j + 1] <- 1/num_particles 
-     }
+    if (j < N - 1) {
+      
+      ess_ratio <- ess_history[j+1] / num_particles
+      
+      if (ess_ratio < ESS_threshold) {
+        # Systematic resampling 
+        resampled_at[j] <- TRUE
+        if (verbose) cat("  Resampling (ESS ratio = ", round(ess_ratio, 3), ")\n")
+        
+        # Vectorized systematic resampling
+        u <- (runif(1) + (0:(num_particles-1))) / num_particles
+        resample_indices <- findInterval(u, c(0, cumsum(weights[, j+1])))
+        
+      } else {
+        resample_indices <- 1:num_particles
+        resampled_at[j] <- FALSE
+        if (verbose) cat("  No resampling (ESS ratio = ", round(ess_ratio, 3), ")\n")
+      }
+      particles[, , j + 1] <- particles[resample_indices, , j + 1]
+      ancestors[, j] <- resample_indices
+      weights[, j + 1] <- 1/num_particles 
+    }
   }
   
   if (verbose) cat("Particle filtering complete.\n")
@@ -1007,8 +1009,9 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
               push=push_array,
               ind_fixed_point=ind_fixed_point_mat,
               ancestors=ancestors,resampled_at=resampled_at,
-         ess_history=ess_history))
+              ess_history=ess_history))
 }
+
 
 
 #' Get estimate of the trajectory (conditional mean) from particle filter 
@@ -1040,6 +1043,10 @@ get_PF_mean<-function(PF_results) {
 #' @param polygon SpatialPolygons object defining the boundary (from `sp` package)
 #' @param true_line_opacity Opacity for true trajectory line (0-1, default: 0.5)
 #' @param est_line_opacity Opacity for estimated trajectory line (0-1, default: 0.1)
+#' @param zoom_box Optional list with elements `xmin`, `xmax`, `ymin`, `ymax` 
+#' to zoom in on a specific area of the plot (default: NULL for no zoom)
+#' @param labels Character vector of length 2 for 
+#' legend labels of true and estimated paths
 #'
 #' @return A ggplot object showing:
 #' \itemize{

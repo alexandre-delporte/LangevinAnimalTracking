@@ -61,7 +61,9 @@ double log_dmvnorm_chol_cpp(const arma::vec& x,
 //' @param P2 Precision matrix (inverse covariance) of dimension \eqn{q \times q}.
 //' @param mean1 Numeric vector of length \eqn{n}. Mean of the first Gaussian.
 //' @param mean2 Numeric vector of length \eqn{q}. Mean of the second Gaussian.
-//' @param L Link matrix of dimension \eqn{q \times n} that maps the state space.
+//' @param M Link matrix of dimension \eqn{q \times n} that maps the state space.
+//' @param proposal_weight Scalar between 0 and 1 to attribute weight to 
+//' the first gaussian. Value 0.5 means equal weight for both gaussians.
 //'
 //' @return A list with components:
 //' \describe{

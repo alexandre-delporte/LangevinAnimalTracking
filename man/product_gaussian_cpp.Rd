@@ -15,7 +15,10 @@ product_gaussian_cpp(P1, P2, mean1, mean2, M, proposal_weight)
 
 \item{mean2}{Numeric vector of length \eqn{q}. Mean of the second Gaussian.}
 
-\item{L}{Link matrix of dimension \eqn{q \times n} that maps the state space.}
+\item{M}{Link matrix of dimension \eqn{q \times n} that maps the state space.}
+
+\item{proposal_weight}{Scalar between 0 and 1 to attribute weight to 
+the first gaussian. Value 0.5 means equal weight for both gaussians.}
 }
 \value{
 A list with components:

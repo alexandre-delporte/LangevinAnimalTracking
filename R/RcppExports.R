@@ -134,6 +134,26 @@ log_dmvnorm_chol_cpp <- function(x, mean, cholSigma) {
     .Call(`_LangevinAnimalTracking_log_dmvnorm_chol_cpp`, x, mean, cholSigma)
 }
 
+#' Product of Two Gaussian Distributions
+#'
+#' Computes the mean and covariance of the product of two Gaussian densities:
+#' \deqn{N(mean1, P1^{-1}) \times N(L mean2, P2^{-1}) \propto N(m, \Gamma).}
+#'
+#' @param P1 Precision matrix (inverse covariance) of dimension \eqn{n \times n}.
+#' @param P2 Precision matrix (inverse covariance) of dimension \eqn{q \times q}.
+#' @param mean1 Numeric vector of length \eqn{n}. Mean of the first Gaussian.
+#' @param mean2 Numeric vector of length \eqn{q}. Mean of the second Gaussian.
+#' @param L Link matrix of dimension \eqn{q \times n} that maps the state space.
+#'
+#' @return A list with components:
+#' \describe{
+#'   \item{\code{mean}}{Posterior mean vector.}
+#'   \item{\code{cov}}{Posterior covariance matrix.}
+#'   \item{\code{chol}}{Upper triangular Cholesky factor of covariance matrix,
+#'     where \code{cov = t(chol) \%*\% chol} (matching R's \code{chol()} convention).}
+#' }
+#'
+#' @export
 product_gaussian_cpp <- function(P1, P2, mean1, mean2, M, proposal_weight) {
     .Call(`_LangevinAnimalTracking_product_gaussian_cpp`, P1, P2, mean1, mean2, M, proposal_weight)
 }

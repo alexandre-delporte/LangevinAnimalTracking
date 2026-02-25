@@ -348,7 +348,7 @@ log_dmvnorm_chol <- function(x, mean, cholSigma) {
   # cholSigma: upper Cholesky factor of Sigma (d x d)
   d <- length(x)
   diff <- x - mean
-  v <- forwardsolve(t(cholSigma), diff)
+  v <- backsolve(cholSigma, diff)
   
   quad <- crossprod(v)
   logdet <- 2 * sum(log(diag(cholSigma)))

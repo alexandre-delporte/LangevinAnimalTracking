@@ -52,38 +52,66 @@ double log_dmvnorm_chol_cpp(const arma::vec& x,
 }
 
 
-
-// [[Rcpp::export]] 
+//' Product of Two Gaussian Distributions
+//'
+//' Computes the mean and covariance of the product of two Gaussian densities:
+//' \deqn{N(mean1, P1^{-1}) \times N(L mean2, P2^{-1}) \propto N(m, \Gamma).}
+//'
+//' @param P1 Precision matrix (inverse covariance) of dimension \eqn{n \times n}.
+//' @param P2 Precision matrix (inverse covariance) of dimension \eqn{q \times q}.
+//' @param mean1 Numeric vector of length \eqn{n}. Mean of the first Gaussian.
+//' @param mean2 Numeric vector of length \eqn{q}. Mean of the second Gaussian.
+//' @param L Link matrix of dimension \eqn{q \times n} that maps the state space.
+//'
+//' @return A list with components:
+//' \describe{
+//'   \item{\code{mean}}{Posterior mean vector.}
+//'   \item{\code{cov}}{Posterior covariance matrix.}
+//'   \item{\code{chol}}{Upper triangular Cholesky factor of covariance matrix,
+//'     where \code{cov = t(chol) \%*\% chol} (matching R's \code{chol()} convention).}
+//' }
+//'
+//' @export
+// [[Rcpp::export]]
 List product_gaussian_cpp(const arma::mat& P1,
-	const arma::mat& P2,
-  	const arma::vec& mean1,
-   	const arma::vec& mean2, 
-   	const arma::mat& M,
-   	double proposal_weight) { 
-   
-	arma::mat Sigma_inv =
+                           const arma::mat& P2,
+                           const arma::vec& mean1,
+                           const arma::vec& mean2,
+                           const arma::mat& M,
+                           double proposal_weight) {
+  
+  // Compute precision matrix of the product
+ arma::mat Sigma_inv =
 	    2*proposal_weight*P1 + 2*(1-proposal_weight)*M.t() * P2 * M;
-
-	Sigma_inv = 0.5 * (Sigma_inv + Sigma_inv.t());
-
-	arma::vec b =
+  
+  // Force symmetry (numerical stability)
+  Sigma_inv = 0.5 * (Sigma_inv + Sigma_inv.t());
+  
+  // Compute precision-weighted mean
+  arma::vec b =
 	    2*proposal_weight * P1 * mean1 + 2*(1 - proposal_weight) * M.t() * P2 * mean2;
+  
+  // Solve for mean: Sigma_inv * m = b
+  arma::vec m = arma::solve(Sigma_inv, b);
+  
+  // Compute covariance: Gamma = inv(Sigma_inv)
+  arma::mat Gamma = arma::inv(Sigma_inv);
+  
+  // Ensure symmetry of covariance
+  Gamma = 0.5 * (Gamma + Gamma.t());
+  
+  // Compute Cholesky decomposition
+  // arma::chol() returns upper triangular U where Gamma = U.t() * U
+  arma::mat chol_Gamma = arma::chol(Gamma);
+  
+  return List::create(
+    Named("mean") = m,
+    Named("cov") = Gamma,
+    Named("chol") = chol_Gamma
+  );
+}
 
-	// Cholesky decomposition (upper triangular) 
-	arma::mat R = arma::chol(Sigma_inv); 
-
-	// Solve Sigma_inv * m = b using Cholesky 
-	arma::vec z = arma::solve(arma::trimatl(R.t()), b);
-	arma::vec m = arma::solve(arma::trimatu(R), z); 
-
-	// Compute Cholesky of covariance: chol(Sigma) 
-	arma::mat chol_Sigma = arma::solve(arma::trimatl(R.t()), arma::eye(R.n_rows, R.n_cols));
-
-	return List::create( Named("mean") = m, Named("chol") = chol_Sigma );
- }
  
- 
-
 // [[Rcpp::export]]
 arma::mat chol_cpp(const arma::mat& Q) {
   // Compute the upper-triangular Cholesky factor

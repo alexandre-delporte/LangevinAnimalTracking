@@ -121,7 +121,7 @@ static inline arma::vec propagate_particle_with_cache(
     // Sample from cached 4D proposal
     arma::vec z = arma::randn<arma::vec>(4);
     U_next = as<arma::vec>(cache.gaussian_proposal["mean"]) +
-             as<arma::mat>(cache.gaussian_proposal["chol"]) * z;
+             as<arma::mat>(cache.gaussian_proposal["chol"]).t() * z;
     global_timer.record("prop_sample");
     
   } else if (scheme == "Strang") {
@@ -210,7 +210,7 @@ static inline arma::vec propagate_particle_with_cache(
     
     // Sample position
     arma::vec X_next = as<arma::vec>(cache.gaussian_proposal["mean"]) +
-                       as<arma::mat>(cache.gaussian_proposal["chol"]) * arma::randn<arma::vec>(2);
+                       as<arma::mat>(cache.gaussian_proposal["chol"]).t() * arma::randn<arma::vec>(2);
     
     // --- Compute push at new position ---
     arma::vec push_next = compute_push_cpp(X_next, polygon_coords, lambda);
@@ -240,7 +240,7 @@ static inline arma::vec propagate_particle_with_cache(
                            Q.submat(2,0,3,1) * cache.invQxx * (X_next - cache.mean.subvec(0,1)) -
                            delta/2.0 * grad_term;
     
-    arma::vec V_next = m_v_cond_x + cholQ_v_cond_x * arma::randn<arma::vec>(2);
+    arma::vec V_next = m_v_cond_x + cholQ_v_cond_x.t() * arma::randn<arma::vec>(2);
     global_timer.record("prop_sample");
     
     U_next = arma::join_vert(X_next, V_next);
@@ -266,6 +266,8 @@ static inline double compute_weight_from_cache(
     const arma::mat& invS_argos2,
     double log_p_argos,
     double log_1mp_argos,
+    double a,
+    double rho,
     // Cached intermediate values
     const ParticleIntermediate& cache
 ) {
@@ -313,8 +315,8 @@ static inline double compute_weight_from_cache(
       List error_params_local = List::create(
         Named("sigma_obs") = sigma_obs,
         Named("df") = df,
-        Named("rho") = 0.0,
-        Named("a") = 0.0,
+        Named("rho") = rho,
+        Named("a") = a,
         Named("p") = std::exp(log_p_argos)
       );
       local_llk = dmvt_mixture_cpp(y, U_pred.subvec(0, 1), error_params_local, true);
@@ -364,8 +366,8 @@ static inline double compute_weight_from_cache(
       List error_params_local = List::create(
         Named("sigma_obs") = sigma_obs,
         Named("df") = df,
-        Named("rho") = 0.0,
-        Named("a") = 0.0,
+        Named("rho") = rho,
+        Named("a") = a,
         Named("p") = std::exp(log_p_argos)
       );
       local_llk = dmvt_mixture_cpp(y, U_pred.subvec(0, 1), error_params_local, true);
@@ -612,14 +614,14 @@ List particle_filter2D_cpp(
       int ind_fp = (split_around_fixed_point && ind_fixed_point_vec(k) > 0) 
                 ? ind_fixed_point_vec(k) : 0;
       
-      // Propagate particle WITH CACHING
+      // Propagate particle 
       arma::vec U_next = propagate_particle_with_cache(
         U_prev, y, M, delta, push,
         potential_params, tau, nu, omega, lambda,
         error_dist, error_params, scheme, polygon_coords,
         ind_fp, use_precomputed_LQ, L_precomputed, Q_precomputed,
         proposal_weight,
-        particle_cache[k]);  // OUTPUT: cache intermediate values
+        particle_cache[k]);
       
       particles.slice(j + 1).row(k) = U_next.t();
     }
@@ -631,17 +633,17 @@ List particle_filter2D_cpp(
    // --- CORRECTION STEP ---
     if (verbose) Rcout << "  Correction step...\n";
     
-    // Compute weights using CACHED intermediate values
+    // Compute weights using cached intermediate values
     for (int k = 0; k < num_particles; ++k) {
       
       arma::vec U_pred = particles.slice(j + 1).row(k).t();
       
-      // Use cached values - NO recomputation of ODE, SDE, Cholesky!
+      // Use cached values to avoid recomputation of ODE, SDE, Cholesky!
       weights(k, j + 1) = compute_weight_from_cache(
         U_pred, y, M,
         error_dist, scheme,
         proposal_weight, sigma_obs, scale, df,
-        invS_argos1, invS_argos2, log_p_argos, log_1mp_argos,
+        invS_argos1, invS_argos2, log_p_argos, log_1mp_argos,a,rho,
         particle_cache[k]);  // INPUT: use cached values
      }
     

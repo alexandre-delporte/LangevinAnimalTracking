@@ -1,36 +1,31 @@
 
 
-#' Combine two Gaussian distributions into a single Gaussian
-#'
-#' Computes the mean and covariance of the product of two Gaussian densities:  
+#' Computes the mean and covariance of the product of two Gaussian densities:
 #' \deqn{N(mean1, P1^{-1}) \times N(L mean2, P2^{-1}) \propto N(m, \Gamma).}
 #'
 #' @param P1 Precision matrix (inverse covariance) of dimension \eqn{n \times n}.
 #' @param P2 Precision matrix (inverse covariance) of dimension \eqn{q \times q}.
 #' @param mean1 Numeric vector of length \eqn{n}. Mean of the first Gaussian.
 #' @param mean2 Numeric vector of length \eqn{q}. Mean of the second Gaussian.
-#' @param M Link matrix of dimension \eqn{q \times n} that maps the state space.
+#' @param L Link matrix of dimension \eqn{q \times n} that maps the state space.
 #'
 #' @return A list with components:
 #' \describe{
 #'   \item{\code{mean}}{Posterior mean vector.}
 #'   \item{\code{cov}}{Posterior covariance matrix.}
 #' }
-product_gaussian<-function(P1,P2,mean1,mean2,M) { 
-  Sigma_inv <- P1 + t(M) %*% P2 %*% M
+product_gaussian<-function(P1,P2,mean1,mean2,L) {
+  
+  
+  Sigma_inv <- P1 + t(L) %*% P2 %*% L
   Sigma_inv <- (Sigma_inv + t(Sigma_inv)) / 2  # force symmetry
   
-  b <- P1 %*% mean1 + t(M) %*% P2 %*% mean2
-  R <- chol(Sigma_inv)
-  z <- forwardsolve(t(R), b)
-  m <- backsolve(R, z)
+  b <- P1 %*% mean1 + t(L) %*% P2 %*% mean2
+  m <- solve(Sigma_inv, b)
+  Gamma <- solve(Sigma_inv)
   
-  chol_Sigma <- forwardsolve(t(R), diag(nrow(R)))
+  return(list(mean=m,cov=Gamma,chol=chol_cpp(Gamma)))
   
-  list(
-    mean = m,
-    chol = chol_Sigma
-  )
 }
 
 #' Laplace approximation for Student-t observation likelihood
@@ -90,7 +85,7 @@ laplace_approximation_student <- function(y, mean, Q, M, scale, df,
     H_neg <- -D2_total
     
     delta <- tryCatch({
-      R <- chol(H_neg)
+      R <- chol_cpp(H_neg)
       z <- forwardsolve(t(R), grad_total)
       backsolve(R, z)
     }, error = function(e) {
@@ -123,10 +118,10 @@ laplace_approximation_student <- function(y, mean, Q, M, scale, df,
   Sigma_post <- (Sigma_post + t(Sigma_post)) / 2
   
   chol_Sigma <- tryCatch({
-    chol(Sigma_post)
+    chol_cpp(Sigma_post)
   }, error = function(e) {
     Sigma_post <- Sigma_post + 1e-6 * diag(nrow(Sigma_post))
-    chol(Sigma_post)
+    chol_cpp(Sigma_post)
   })
   
   result <- list(
@@ -362,7 +357,7 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
     }
     
     # Sample next state 
-    U_next <- matrix(gaussian_proposal$mean + gaussian_proposal$chol %*% rnorm(length(mean)),
+    U_next <- matrix(gaussian_proposal$mean + t(gaussian_proposal$chol) %*% rnorm(length(mean)),
                                ncol = 1)
   }
   else if (scheme=="Strang")  {
@@ -419,7 +414,7 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
     }
     
     
-    X_next <- gaussian_proposal$mean + gaussian_proposal$chol %*% rnorm(2)
+    X_next <- gaussian_proposal$mean + t(gaussian_proposal$chol) %*% rnorm(2)
     
     push_next<-compute_push(X_next,polygon,lambda)
     
@@ -445,7 +440,7 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
     # Propagate velocity
     m_v_cond_x <- mean[3:4] + Q[3:4,1:2] %*% invQxx %*% (X_next - mean[1:2]) -
       delta/2 * grad_term
-    V_next <- m_v_cond_x+cholQ_v_cond_x%*%rnorm(2)
+    V_next <- m_v_cond_x+t(cholQ_v_cond_x)%*%rnorm(2)
     
     U_next <- matrix(c(X_next, V_next), ncol=1)
   }

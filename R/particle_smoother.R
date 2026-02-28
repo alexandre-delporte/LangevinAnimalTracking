@@ -25,13 +25,19 @@ forward_filtering_backward_sampling <-
            potential_params=NULL,error_params,error_dist,polygon,U0,lambda,
            num_particles,scheme="Lie-Trotter",split_around_fixed_point=FALSE,
            verbose=FALSE) {
-  
   # forward filtering
+  
   if (is.null(forward_filter)) {
-    forward_filter = particle_filter2D(data,sde_params,potential_params,
-                                     error_params,error_dist,
-                                     polygon,U0,lambda,num_particles,scheme,
-                                     split_around_fixed_point,verbose)
+    
+    forward_filter = particle_filter2D_cpp(observations=as.matrix(data[,c("time","Y1","Y2")]),
+                                           sde_params = sde_params, potential_params = potential_params, 
+                                           error_params = error_params, error_dist = error_dist,
+                                           polygon_coords = polygon@coords, U0 = U0, lambda = lambda,
+                                           num_particles = num_particles,
+                                           split_around_fixed_point = split_around_fixed_point,
+                                           scheme = scheme,ESS_threshold=ESS_threshold,
+                                           proposal_weight=roposal_weight,
+                                           verbose = verbose,print_timing = FALSE)
   }
     
   particles =  forward_filter$particles
@@ -71,18 +77,18 @@ forward_filtering_backward_sampling <-
               ind_fixed_point_current <- NULL
             }
           #ODE step 
-          U_hat<-solve_ODE(U_prev,delta,push_array[k,,j],potential_params,
+          U_hat<-solve_ODE_cpp(U_prev,delta,push_array[k,,j],potential_params,
                            ind_fixed_point_current)
           
           #SDE mean and covariance
-          OU_solution<-solve_SDE(U_hat,delta,tau,nu,omega,potential_params,
-                                 ind_fixed_point_current)
+          OU_solution<-solve_SDE_cpp(U_hat,delta,tau,nu,omega,potential_params,
+                                 ind_fixed_point_current,NULL,NULL)
           Q<-OU_solution$Q
           mean<-OU_solution$mean
           
-          backward_weights[k,j] <- weights[k, j]*dmvnorm(U_next,
+          backward_weights[k,j] <- weights[k, j]*exp(log_dmvnorm_chol_cpp(U_next,
                                                          mean = mean,
-                                                         sigma = Q)
+                                                         cholSigma = chol_cpp(Q)))
         }
         
         if (scheme=="Strang") {
@@ -101,8 +107,8 @@ forward_filtering_backward_sampling <-
           U_hat<-solve_ODE_cpp(U_prev,delta/2,push_array[k,,j],potential_params,
                                ind_fixed_point_current)
           #SDE mean and covariance
-          OU_solution<-solve_SDE(U_hat,delta,tau,nu,omega,potential_params,
-                                 ind_fixed_point_current)
+          OU_solution<-solve_SDE_cpp(U_hat,delta,tau,nu,omega,potential_params,
+                                 ind_fixed_point_current,NULL,NULL)
           Q<-OU_solution$Q
           mean<-OU_solution$mean
           
@@ -118,9 +124,9 @@ forward_filtering_backward_sampling <-
           U_tilde_next <- c(X_next, V_tilde)
           
           
-          backward_weights[k,j] <- weights[k, j]*dmvnorm(U_tilde_next,
+          backward_weights[k,j] <- weights[k, j]*exp(log_dmvnorm_chol(U_tilde_next,
                                                          mean = mean,
-                                                         sigma = Q)
+                                                         cholSigma = chol_cpp(Q)))
           
           
         }

@@ -36,6 +36,7 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
   if (split_around_fixed_point) {
     stop("Not implemented yet with splitting around fixed point")
   }
+  
   p <- length(sde_params)
   param_names <- names(sde_params)
   if (is.null(param_names)) stop("sde_params must be a named list")
@@ -55,29 +56,25 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
   alpha<-potential_params$alpha;B<-potential_params$B
   x_star<-potential_params$x_star
   
-  #pre compute true potential and true inward push to later compare
-  # true and estimate gradients
-  push_mat_true <- matrix(NA, nrow = n, ncol = 2)
-  potential_grad_mat_true <- matrix(NA, nrow = n, ncol = 2) 
-  for (t in 1:n) { 
-    X <- as.numeric(data[t, c("X1", "X2")])
-    push_mat_true[t, ] <- compute_push(X, polygon, lambda)
-    potential_grad_mat_true[t, ] <- mix_gaussian_grad_cpp(X,x_star,list(B=B,alpha=alpha),
-                                                          exclude=integer(0))
-  } 
-  
   
   for (k in 1:SGD_iter) {
     if (verbose) message("SGD iter", k, "\n")
 
     # Run particle filter
-    filter <- particle_filter2D(data,sde_params = as.list(theta[k, ]),
+  
+    filter <- particle_filter2D_cpp(observations = 
+                                      as.matrix(data[,c("time","Y1","Y2")]),
+                                    sde_params = as.list(theta[k, ]),
                                 potential_params = potential_params,
-                                error_params = error_params, error_dist = error_dist,
-                                polygon = polygon, U0 = U0, lambda = lambda,
-                                num_particles = num_particles, scheme = scheme,
+                                error_params = error_params, 
+                                error_dist = error_dist,
+                                polygon_coords = polygon@coords,
+                                U0 = U0, lambda = lambda,
+                                num_particles = num_particles,
                                 split_around_fixed_point = split_around_fixed_point,
-                                verbose = FALSE,ESS_threshold = 0.8)
+                                scheme = scheme,ESS_threshold=0.6,
+                                proposal_weight=0.5,
+                                verbose = FALSE,print_timing = FALSE)
     
     if (smoothing) {
       
@@ -97,17 +94,18 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
  
     colnames(z) <- c("X1", "X2", "V1", "V2") 
 
-    # Compute push and potential gradient for this trajectory 
+    # Compute push and potential gradient  
     push_mat <- matrix(NA, nrow = n, ncol = 2)
     potential_grad_mat <- matrix(NA, nrow = n, ncol = 2) 
     
     for (t in 1:n) { 
       X <- z[t, c("X1", "X2")]
       push_mat[t, ] <- compute_push(X, polygon, lambda)
-      potential_grad_mat[t, ] <- potential_grad(X)
+      potential_grad_mat[t, ] <- mix_gaussian_grad_cpp(X,x_star,list(B=B,alpha=alpha),
+                                                        exclude=integer(0))
       } 
     
-    # Compute gradient for this trajectory 
+    # Compute gradient  
     z_df <- as.data.frame(z) 
     z_df$time <- data$time 
     
@@ -117,17 +115,10 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
                         omega = theta[k, "omega"], scheme = scheme, 
                         verbose = FALSE)
     
-    v_k = colSums(grad_mat)/n
+    v_k = colSums(grad_mat)
     names(v_k) <- param_names
     if (length(fix_idx) > 0) v_k[fix_idx] <- 0
     
-    #compute true gradient at current parameters for comparison
-    true_grad_mat = llk_gradient(data, push_mat = push_mat_true, 
-                                            potential_grad_mat = potential_grad_mat_true,
-                                            tau = theta[k, "tau"], nu = theta[k, "nu"],
-                                            omega = theta[k, "omega"], scheme = scheme, 
-                                            verbose = FALSE )
-
     # compute gamma_k
     if (k <= K_preheat) {
       gamma_k <- gamma0 + (1 - gamma0) * (k / K_preheat)
@@ -143,7 +134,7 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
       I_k= I_k+Delta[i,]%*% t(Delta[i,])
     }
     
-    I_k <- I_k/n
+    I_k <- I_k
     
     # Preconditioner with pre-heating phase
     if (k < K_preheat) {

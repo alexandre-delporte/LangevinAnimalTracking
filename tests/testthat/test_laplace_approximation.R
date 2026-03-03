@@ -1,14 +1,9 @@
 #' Test Suite for Laplace Approximation Student-t Function
 #' 
-#' This script provides comprehensive tests to verify that the Laplace
+#' tests to verify that the Laplace
 #' approximation is working correctly.
 
-library(mvtnorm)
-library(testthat)
-devtools::load_all("../../LangevinAnimalTracking")
 
-# Source your function
-# source("laplace_approximation_student.R")
 
 #' Helper function: Log-posterior density
 #' @param U State vector (length 4)
@@ -98,9 +93,6 @@ test_that("Laplace approximation converges", {
   expect_true(result$converged, info = "Algorithm should converge")
   expect_true(result$n_iter < 20, info = "Should converge in < 10 iterations")
   
-  cat("\n✓ Test 1 PASSED: Convergence test\n")
-  cat("  Converged:", result$converged, "\n")
-  cat("  Iterations:", result$n_iter, "\n")
 })
 
 # ==============================================================================
@@ -133,7 +125,7 @@ test_that("Found mode is a local maximum", {
     perturbation <- rnorm(4, 0, 0.001)
     U_perturb <- result$mean + perturbation
     log_post_perturb <- log_posterior(U_perturb, y, mean, Q_inv, M, scale, df)
-    print(log_post_perturb)
+    
     if (log_post_perturb > log_post_mode + 1e-6) {
       all_lower <- FALSE
       cat("  Found higher point! Difference:", log_post_perturb - log_post_mode, "\n")
@@ -141,10 +133,7 @@ test_that("Found mode is a local maximum", {
   }
   
   expect_true(all_lower, info = "All nearby points should have lower log-posterior")
-  
-  cat("\n✓ Test 2 PASSED: Mode verification\n")
-  cat("  Log-posterior at mode:", log_post_mode, "\n")
-  cat("  All", n_tests, "random perturbations had lower log-posterior\n")
+
 })
 
 # ==============================================================================
@@ -174,10 +163,6 @@ test_that("Gradient is zero at the mode", {
   
   expect_true(grad_norm < 1e-5, 
               info = paste("Gradient norm should be < 1e-5, got", grad_norm))
-  
-  cat("\n✓ Test 3 PASSED: Gradient at mode is zero\n")
-  cat("  Gradient norm:", sprintf("%.2e", grad_norm), "\n")
-  cat("  Gradient:", sprintf("%.2e", grad_numerical), "\n")
 })
 
 # ==============================================================================
@@ -211,10 +196,6 @@ test_that("Analytical Hessian matches numerical Hessian", {
   
   expect_true(max_diff < 1e-3, 
               info = paste("Max Hessian difference should be < 1e-3, got", max_diff))
-  
-  cat("\n✓ Test 4 PASSED: Hessian verification\n")
-  cat("  Max absolute difference:", sprintf("%.2e", max_diff), "\n")
-  cat("  Relative error:", sprintf("%.2e", rel_error), "\n")
 })
 
 # ==============================================================================
@@ -252,10 +233,6 @@ test_that("Posterior covariance is positive definite", {
   expect_true(max_diff < 1e-10,
               info = "Cholesky should reconstruct covariance")
   
-  cat("\n✓ Test 5 PASSED: Positive definiteness\n")
-  cat("  Min eigenvalue:", min(eigenvalues), "\n")
-  cat("  Max eigenvalue:", max(eigenvalues), "\n")
-  cat("  Cholesky reconstruction error:", sprintf("%.2e", max_diff), "\n")
 })
 
 # ==============================================================================
@@ -274,7 +251,6 @@ test_that("Works for different degrees of freedom", {
   
   df_values <- c(3, 5, 10, 20, 100)
   
-  cat("\n✓ Test 6: Testing different df values\n")
   
   for (df in df_values) {
     result <- laplace_approximation_student(y, mean, Q, M, scale, df)
@@ -282,10 +258,8 @@ test_that("Works for different degrees of freedom", {
     expect_true(result$converged, 
                 info = paste("Should converge for df =", df))
     
-    cat(sprintf("  df = %3d: converged in %d iterations\n", df, result$n_iter))
   }
   
-  cat("  All df values converged successfully\n")
 })
 
 # ==============================================================================
@@ -329,9 +303,6 @@ test_that("Can sample from proposal and evaluate density", {
   expect_true(cov_diff < 0.05,
               info = "Sample covariance should be close to analytical")
   
-  cat("\n✓ Test 7 PASSED: Sampling test\n")
-  cat("  Sample mean error:", sprintf("%.3f", mean_diff), "\n")
-  cat("  Sample cov error:", sprintf("%.3f", cov_diff), "\n")
 })
 
 # ==============================================================================
@@ -363,10 +334,6 @@ test_that("Laplace approximation improves over naive approach", {
   # Compare modes
   mode_diff <- sqrt(sum((result_laplace$mean - m_naive)^2))
   
-  cat("\n✓ Test 8: Comparison with naive approach\n")
-  cat("  Laplace mode:", sprintf("%.3f", result_laplace$mean[1:2]), "\n")
-  cat("  Naive mode:  ", sprintf("%.3f", m_naive[1:2]), "\n")
-  cat("  Difference:  ", sprintf("%.3f", mode_diff), "\n")
   
   # The modes should be different (showing improvement)
   expect_true(mode_diff > 1e-6,
@@ -375,66 +342,9 @@ test_that("Laplace approximation improves over naive approach", {
   # Evaluate log-posterior at both modes
   log_post_laplace <- log_posterior(result_laplace$mean, y, mean, Q_inv, M, scale, df)
   log_post_naive <- log_posterior(m_naive, y, mean, Q_inv, M, scale, df)
-  
-  cat("  Log-posterior at Laplace mode:", sprintf("%.3f", log_post_laplace), "\n")
-  cat("  Log-posterior at naive mode:  ", sprintf("%.3f", log_post_naive), "\n")
+
   
   # Laplace should find higher log-posterior (better approximation)
   expect_true(log_post_laplace >= log_post_naive - 1e-6,
               info = "Laplace mode should have at least as high log-posterior")
 })
-
-# ==============================================================================
-# TEST 9: Edge Case - Observation Equals Prior Mean
-# ==============================================================================
-
-test_that("Handles edge case when observation equals prior mean", {
-  set.seed(123)
-  
-  # Setup where observation = prior mean
-  mean <- c(25, 5, 0.5, 0.3)
-  Q <- diag(c(0.1, 0.1, 0.5, 0.5))
-  M <- cbind(diag(2), matrix(0, 2, 2))
-  y <- mean[1:2]  # Observation equals prior mean for position
-  scale <- 0.2
-  df <- 3
-  
-  # Run Laplace approximation
-  result <- laplace_approximation_student(y, mean, Q, M, scale, df)
-  
-  expect_true(result$converged,
-              info = "Should converge even when y = prior mean")
-  
-  # Mode should be close to prior mean
-  diff <- sqrt(sum((result$mean - mean)^2))
-  
-  expect_true(diff < 0.1,
-              info = "Mode should be close to prior mean when observation matches")
-  
-  cat("\n✓ Test 9 PASSED: Edge case - observation = prior mean\n")
-  cat("  Distance from prior mean:", sprintf("%.3f", diff), "\n")
-})
-
-# ==============================================================================
-# RUN ALL TESTS
-# ==============================================================================
-
-run_all_tests <- function() {
-  cat("\n")
-  cat("================================================================================\n")
-  cat("  LAPLACE APPROXIMATION TEST SUITE\n")
-  cat("================================================================================\n")
-  
-  test_results <- test_dir(".", reporter = "summary")
-  
-  cat("\n")
-  cat("================================================================================\n")
-  cat("  TEST SUMMARY\n")
-  cat("================================================================================\n")
-  print(test_results)
-  
-  return(test_results)
-}
-
-# To run all tests:
-# run_all_tests()

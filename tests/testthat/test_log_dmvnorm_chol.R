@@ -1,9 +1,5 @@
 test_that("log multivariate normal density via Cholesky matches dmvnorm", {
   
-  skip_if_not_installed("mvtnorm")
-  
-    
-
   set.seed(123)
   
   for (d in c(1, 2, 5, 10)) {
@@ -33,10 +29,6 @@ test_that("log multivariate normal density via Cholesky matches dmvnorm", {
       info = paste("R implementation failed for d =", d)
     )
     
-    cat("Dimension:", d, "\n")
-    cat("Log density (R):", r_val, "\n")
-    cat("Log density (C++):", cpp_val, "\n")
-    cat("Log density (Reference):", ref, "\n")
     
     expect_equal(
       cpp_val,
@@ -52,9 +44,6 @@ test_that("log multivariate normal density via Cholesky matches dmvnorm", {
 test_that("predictive and proposal densities via Cholesky matches dmvnorm 
           for Lie-Trotter scheme", {
   
-
-library(sp)
-source("set_up.R")
 tau <- sde_params$tau
 nu <- sde_params$nu
 omega <- sde_params$omega
@@ -109,12 +98,7 @@ for (i in 2:nrow(data)) {
   log_prop_density<-dmvnorm(U_pred,mean=gaussian_proposal$mean,
                             sigma=gaussian_proposal$cov,
                             log=TRUE)
-  cat("Time step:", i, "\n")
-  cat("Log predictive density (Cholesky):", log_pred_density_chol, "\n")
-  cat("Log predictive density (dmvnorm):", log_pred_density, "\n")
-  cat("Log proposal density (Cholesky):", log_prop_density_chol, "\n")
-  cat("Log proposal density (dmvnorm):", log_prop_density, "\n")
-  
+ 
   expect_equal(
     log_pred_density_chol,
     log_pred_density,

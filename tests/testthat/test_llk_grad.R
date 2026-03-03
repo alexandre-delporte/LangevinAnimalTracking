@@ -3,8 +3,6 @@
 
 test_that("Gradient of one-step log-likelihood matches finite differences", {
   
-  library(sp)
-  source("set_up.R")
   tau <- sde_params$tau
   nu <- sde_params$nu
   omega <- sde_params$omega

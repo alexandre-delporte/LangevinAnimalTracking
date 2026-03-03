@@ -32,5 +32,6 @@ Imports:
 Suggests:
     testthat (>= 3.0.0),
     knitr,
-    rmarkdown
+    rmarkdown,
+    mvtnorm,sp
 RoxygenNote: 7.3.3

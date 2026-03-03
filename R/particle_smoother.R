@@ -124,7 +124,7 @@ forward_filtering_backward_sampling <-
           U_tilde_next <- c(X_next, V_tilde)
           
           
-          backward_weights[k,j] <- weights[k, j]*exp(log_dmvnorm_chol(U_tilde_next,
+          backward_weights[k,j] <- weights[k, j]*exp(log_dmvnorm_chol_cpp(U_tilde_next,
                                                          mean = mean,
                                                          cholSigma = chol_cpp(Q)))
           

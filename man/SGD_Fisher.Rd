@@ -2,8 +2,8 @@
 % Please edit documentation in R/SGD.R
 \name{SGD_Fisher}
 \alias{SGD_Fisher}
-\title{Stochastic Gradient Descent with Fisher Information Preconditioning for SDE parameter estimation 
-(Baey et .al 2023). Only works with Naive (split around 0) Lie-Trotter scheme for now.}
+\title{Stochastic Gradient Descent with Fisher Information Preconditioning for SDE
+parameter estimation}
 \usage{
 SGD_Fisher(
   data,
@@ -23,53 +23,125 @@ SGD_Fisher(
   gamma0 = 1e-04,
   K_preheat = 1000,
   alpha = 2/3,
+  C_heating = 1/1000,
   smoothing = FALSE
 )
 }
 \arguments{
-\item{data}{Data frame with observed data}
+\item{data}{A data frame of observations with columns \code{time},
+\code{Y1}, and \code{Y2} (observed positions).}
 
-\item{sde_params}{Named list of initial SDE parameters}
+\item{sde_params}{A named list of initial SDE parameter values. Must
+contain at least \code{tau} (persistence time scale), \code{nu} (speed
+scale), and \code{omega} (angular velocity). Names are used to label
+columns in the output matrix.}
 
-\item{fixpar}{Character vector of parameter names to fix during optimization}
+\item{fixpar}{A character vector of parameter names to hold fixed during
+optimisation (their gradients and updates are zeroed out). Default
+\code{NULL} means all parameters are estimated.}
 
-\item{SGD_iter}{Number of SGD iterations}
+\item{SGD_iter}{A positive integer giving the total number of SGD
+iterations to run (across all three phases).}
 
-\item{potential_params}{Parameters ofr the mixture of gaussian potential. Only
-needed when split_around_fixed_point=TRUE}
+\item{potential_params}{A named list of parameters for the mixture of
+Gaussian potential \eqn{H}, with elements:
+\describe{
+  \item{\code{alpha}}{Numeric vector of mixture weights.}
+  \item{\code{B}}{List of precision matrices for each Gaussian component.}
+  \item{\code{x_star}}{Matrix of attraction centres (one row per
+    component).}
+}}
 
-\item{error_dist}{Error distribution for the observation model}
+\item{error_dist}{A character string specifying the observation error
+distribution (e.g. \code{"gaussian"}, \code{"argos"}).}
 
-\item{error_params}{Parameters for this error distribution}
+\item{error_params}{A named list of parameters for the observation error
+distribution (e.g. \code{list(sigma = 0.2)}).}
 
-\item{scheme}{Splitting scheme ("Lie-Trotter" or "Strang")}
+\item{scheme}{A character string specifying the numerical splitting scheme
+used to approximate the SDE transition density. Either
+\code{"Lie-Trotter"} (default) or \code{"Strang"}.}
 
-\item{polygon}{Polygon defining the domain of interest}
+\item{polygon}{A \code{SpatialPolygons} object defining the spatial domain
+\eqn{\mathcal{D}} within which animal movement is constrained.}
 
-\item{U0}{Initial position and velocity vector}
+\item{U0}{A numeric vector of length 4 giving the initial state
+\eqn{(x_1, x_2, v_1, v_2)} (position and velocity) at time 0.}
 
-\item{lambda}{Penlization parameter}
+\item{lambda}{A positive scalar giving the domain penalisation parameter
+\eqn{\lambda} used in the reflected Langevin push.}
 
-\item{num_particles}{Number of particles for the particle filter}
+\item{num_particles}{A positive integer giving the number of particles
+used in the particle filter.}
 
-\item{split_around_fixed_point}{Logical indicating whether to split the potential around its fixed point}
+\item{split_around_fixed_point}{Logical. If \code{TRUE}, the potential is
+split around its fixed point. Currently not implemented and will throw an
+error. Default \code{FALSE}.}
 
-\item{verbose}{Logical indicating whether to print progress messages}
+\item{verbose}{Logical. If \code{TRUE}, progress messages are printed at
+each iteration including the current learning rate, gradient, Fisher
+matrix eigenvalues, step direction, and updated parameters. Default
+\code{FALSE}.}
 
-\item{gamma0}{Initial step size parameter}
+\item{gamma0}{A small positive scalar giving the initial learning rate at
+the start of the pre-heating phase. The authors recommend \eqn{10^{-4}}.
+Default \code{1e-4}.}
 
-\item{K_preheat}{Number of preheating iterations}
+\item{K_preheat}{A positive integer giving the number of pre-heating
+iterations. The authors recommend 1000; this can be increased (with a
+corresponding decrease in \code{gamma0}) if early iterations are
+unstable. Default \code{1000}.}
 
-\item{alpha}{Step size decay parameter}
+\item{alpha}{A scalar in \eqn{(1/2, 1]} controlling the decay rate of the
+learning rate in the decreasing phase: \eqn{\gamma_k = (k -
+K_{\text{end-heating}})^{-\alpha}}. Must satisfy \eqn{\alpha > 1/2} to
+ensure \eqn{\sum \gamma_k^2 < \infty}. Default \code{2/3}.}
 
-\item{smoothing}{Logical indicating whether to use smoothing when inputting a latent trajectory}
+\item{C_heating}{A small positive scalar giving the smoothing constant of
+the 3rd-order exponential mean filter applied to the gradient norm during
+the heating phase. The heating phase ends when the filtered norm stops
+decreasing. The authors recommend \eqn{1/1000}. Default \code{1/1000}.}
+
+\item{smoothing}{Logical. If \code{TRUE}, the latent trajectory is obtained
+via forward-filtering backward-sampling (FFBS) rather than from the
+particle filter mean, giving lower-variance gradient estimates at higher
+computational cost. Default \code{FALSE}.}
 }
 \value{
-A list containing:
-#' - theta: Matrix of parameter estimates at each iteration
-#' - Delta: Matrix of running gradient estimates
+A named list with the following elements:
+\describe{
+  \item{\code{theta}}{A matrix of dimension \code{(SGD_iter + 1)} \eqn{\times}
+    \code{p} containing the parameter estimates at each iteration. Row 1
+    corresponds to the initial value \code{sde_params}. Column names match
+    \code{names(sde_params)}.}
+  \item{\code{Delta}}{A matrix of dimension \code{(n - 1)} \eqn{\times}
+    \code{p} containing the running stochastic approximation of the
+    per-step score contributions at the final iteration. Can be used to
+    reconstruct the final Fisher information matrix estimate as
+    \eqn{I = \Delta^\top \Delta}.}
+  \item{\code{K_end_heating}}{An integer giving the iteration at which the
+    heating phase ended and the decreasing learning rate schedule began.
+    \code{NA} if the heating phase had not yet ended when the algorithm
+    terminated.}
+}
 }
 \description{
-Stochastic Gradient Descent with Fisher Information Preconditioning for SDE parameter estimation 
-(Baey et .al 2023). Only works with Naive (split around 0) Lie-Trotter scheme for now.
+Implements the Fisher-SGD algorithm of Baey et al. (2023) for maximum
+likelihood estimation of parameters in latent variable models. The algorithm
+preconditions the stochastic gradient by a positive definite estimate of the
+Fisher information matrix (FIM), which scales the parameter updates across
+directions and ensures descent. The learning rate follows a three-phase
+schedule: exponential growth (pre-heating), a constant phase at 1 (heating),
+and a Robbins-Monro decreasing phase.
+}
+\references{
+Baey, C., Delattre, M., Kuhn, E., Leger, J.-B., and Lemler, S. (2023).
+Efficient preconditioned stochastic gradient descent for estimation in
+latent variable models. \emph{Proceedings of the 40th International
+Conference on Machine Learning}, PMLR 202.
+}
+\seealso{
+\code{\link{particle_filter2D_cpp}} for the underlying particle filter,
+\code{\link{forward_filtering_backward_sampling}} for the smoother,
+\code{\link{llk_gradient}} for the pseudo-likelihood gradient computation.
 }

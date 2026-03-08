@@ -1,4 +1,3 @@
-
 #' Stochastic Gradient Descent with Fisher Information Preconditioning for SDE
 #' parameter estimation
 #'
@@ -66,11 +65,11 @@
 #' @param C_heating A small positive scalar giving the smoothing constant of
 #'   the 3rd-order exponential mean filter applied to the gradient norm during
 #'   the heating phase. The heating phase ends when the filtered norm stops
-#'   decreasing. The authors recommend \eqn{1/1000}. Default \code{1/1000}.
-#' @param smoothing Logical. If \code{TRUE}, the latent trajectory is obtained
-#'   via forward-filtering backward-sampling (FFBS) rather than from the
-#'   particle filter mean, giving lower-variance gradient estimates at higher
-#'   computational cost. Default \code{FALSE}.
+#'     decreasing. The authors recommend \eqn{1/1000}. Default \code{1/1000}.
+#' @param n_smooth_samples A non-negative integer. If greater than 0, the
+#'   smoothed trajectories from the last \code{n_smooth_samples} iterations
+#'   are saved and returned. These can be used to reconstruct plausible latent
+#'   tracks consistent with the observations. Default \code{0}.
 #'
 #' @return A named list with the following elements:
 #' \describe{
@@ -87,18 +86,12 @@
 #'     heating phase ended and the decreasing learning rate schedule began.
 #'     \code{NA} if the heating phase had not yet ended when the algorithm
 #'     terminated.}
+#'   \item{\code{smooth_samples}}{A list of length \code{n_smooth_samples}
+#'     containing the smoothed trajectories from the last iterations. Each
+#'     element is an \code{n x 4} matrix with columns
+#'     \code{c("X1", "X2", "V1", "V2")}. \code{NULL} if
+#'     \code{n_smooth_samples = 0}.}
 #' }
-#'
-#' @references
-#' Baey, C., Delattre, M., Kuhn, E., Leger, J.-B., and Lemler, S. (2023).
-#' Efficient preconditioned stochastic gradient descent for estimation in
-#' latent variable models. \emph{Proceedings of the 40th International
-#' Conference on Machine Learning}, PMLR 202.
-#'
-#' @seealso
-#' \code{\link{particle_filter2D_cpp}} for the underlying particle filter,
-#' \code{\link{forward_filtering_backward_sampling}} for the smoother,
-#' \code{\link{llk_gradient}} for the pseudo-likelihood gradient computation.
 #'
 #' @export
 SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
@@ -106,7 +99,7 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
                        scheme = "Lie-Trotter", polygon, U0, lambda,
                        num_particles, split_around_fixed_point = FALSE,
                        verbose = FALSE, gamma0 = 1e-4, K_preheat = 1000,
-                       alpha = 2/3, C_heating = 1/1000, smoothing = FALSE) {
+                       alpha = 2/3, C_heating = 1/1000, n_smooth_samples = 0) {
   
   if (split_around_fixed_point) {
     stop("Not implemented yet with splitting around fixed point")
@@ -131,11 +124,14 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
   x_star    <- potential_params$x_star
   
   # Heating phase tracking (3rd-order exponential mean filter on gradient norm)
-  heating_finished       <- FALSE
-  K_end_heating          <- NA
-  grad_norm_history      <- c()
+  heating_finished        <- FALSE
+  K_end_heating           <- NA
+  grad_norm_history       <- c()
   grad_norm_filtered      <- NA
   grad_norm_filtered_prev <- NA
+  
+  # Storage for the last n_smooth_samples trajectories
+  smooth_samples <- list()
   
   for (k in 1:SGD_iter) {
     if (verbose) message("SGD iter ", k, "\n")
@@ -151,25 +147,22 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
       U0 = U0, lambda = lambda,
       num_particles    = num_particles,
       split_around_fixed_point = split_around_fixed_point,
-      scheme = scheme, ESS_threshold = 0.6,
+      scheme = scheme, ESS_threshold = 0.8,
       proposal_weight = 0.5,
       verbose = FALSE, print_timing = FALSE
     )
     
-    if (smoothing) {
-      backward_samples <- forward_filtering_backward_sampling(
-        data, 1, forward_filter = filter,
-        as.list(theta[k, ]), potential_params,
-        error_params, error_dist, polygon,
-        U0, lambda, num_particles,
-        scheme = scheme,
-        split_around_fixed_point = FALSE,
-        verbose = FALSE
-      )
-      z <- t(apply(backward_samples, c(2, 3), mean))
-    } else {
-      z <- get_PF_mean(filter)
-    }
+    # Obtain latent trajectory via forward-filtering backward-sampling (FFBS)
+    backward_samples <- forward_filtering_backward_sampling(
+      data, 1, forward_filter = filter,
+      as.list(theta[k, ]), potential_params,
+      error_params, error_dist, polygon,
+      U0, lambda, num_particles,
+      scheme = scheme,
+      split_around_fixed_point = FALSE,
+      verbose = FALSE
+    )
+    z <- t(apply(backward_samples, c(2, 3), mean))
     colnames(z) <- c("X1", "X2", "V1", "V2")
     
     # Compute push and potential gradient
@@ -200,15 +193,15 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
     names(v_k) <- param_names
     if (length(fix_idx) > 0) v_k[fix_idx] <- 0
     
-    # --- Three-phase learning rate schedule (Baey et al. 2023, Section 3.4.1) ---
+    # Three-phase learning rate schedule (Baey et al. 2023, Section 3.4.1) 
     if (k < K_preheat) {
       # Phase 1: exponential growth from gamma0 to 1
       gamma_k <- gamma0^(1 - k / K_preheat)
     } else if (!heating_finished) {
-      # Phase 2: heating — hold gamma at 1
+      # Phase 2: heating — keep gamma at 1
       gamma_k <- 1
     } else {
-      # Phase 3: Robbins-Monro decreasing schedule
+      # Phase 3: Robbins-Monro decrease
       gamma_k <- (k - K_end_heating)^(-alpha)
     }
     if (verbose) message("gamma_k: ", gamma_k, "\n")
@@ -266,6 +259,11 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
       }
     }
     
+    # Save the trajectory from this iteration if we are in the last n_smooth_samples iterations
+    if (n_smooth_samples > 0 && k > SGD_iter - n_smooth_samples) {
+      smooth_samples <- c(smooth_samples, list(z))
+    }
+    
     if (verbose) {
       message("v_k: ",     paste(round(v_k, 4), collapse = " "), "\n")
       message("I_k: ",     paste(round(I_k, 4), collapse = " "), "\n")
@@ -279,8 +277,9 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
   }
   
   return(list(
-    theta         = theta,
-    Delta         = Delta,
-    K_end_heating = K_end_heating
+    theta          = theta,
+    Delta          = Delta,
+    K_end_heating  = K_end_heating,
+    smooth_samples = if (n_smooth_samples > 0) smooth_samples else NULL
   ))
 }

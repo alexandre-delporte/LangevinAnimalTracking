@@ -24,7 +24,7 @@ SGD_Fisher(
   K_preheat = 1000,
   alpha = 2/3,
   C_heating = 1/1000,
-  smoothing = FALSE
+  n_smooth_samples = 0
 )
 }
 \arguments{
@@ -100,12 +100,12 @@ ensure \eqn{\sum \gamma_k^2 < \infty}. Default \code{2/3}.}
 \item{C_heating}{A small positive scalar giving the smoothing constant of
 the 3rd-order exponential mean filter applied to the gradient norm during
 the heating phase. The heating phase ends when the filtered norm stops
-decreasing. The authors recommend \eqn{1/1000}. Default \code{1/1000}.}
+  decreasing. The authors recommend \eqn{1/1000}. Default \code{1/1000}.}
 
-\item{smoothing}{Logical. If \code{TRUE}, the latent trajectory is obtained
-via forward-filtering backward-sampling (FFBS) rather than from the
-particle filter mean, giving lower-variance gradient estimates at higher
-computational cost. Default \code{FALSE}.}
+\item{n_smooth_samples}{A non-negative integer. If greater than 0, the
+smoothed trajectories from the last \code{n_smooth_samples} iterations
+are saved and returned. These can be used to reconstruct plausible latent
+tracks consistent with the observations. Default \code{0}.}
 }
 \value{
 A named list with the following elements:
@@ -123,6 +123,11 @@ A named list with the following elements:
     heating phase ended and the decreasing learning rate schedule began.
     \code{NA} if the heating phase had not yet ended when the algorithm
     terminated.}
+  \item{\code{smooth_samples}}{A list of length \code{n_smooth_samples}
+    containing the smoothed trajectories from the last iterations. Each
+    element is an \code{n x 4} matrix with columns
+    \code{c("X1", "X2", "V1", "V2")}. \code{NULL} if
+    \code{n_smooth_samples = 0}.}
 }
 }
 \description{
@@ -133,15 +138,4 @@ Fisher information matrix (FIM), which scales the parameter updates across
 directions and ensures descent. The learning rate follows a three-phase
 schedule: exponential growth (pre-heating), a constant phase at 1 (heating),
 and a Robbins-Monro decreasing phase.
-}
-\references{
-Baey, C., Delattre, M., Kuhn, E., Leger, J.-B., and Lemler, S. (2023).
-Efficient preconditioned stochastic gradient descent for estimation in
-latent variable models. \emph{Proceedings of the 40th International
-Conference on Machine Learning}, PMLR 202.
-}
-\seealso{
-\code{\link{particle_filter2D_cpp}} for the underlying particle filter,
-\code{\link{forward_filtering_backward_sampling}} for the smoother,
-\code{\link{llk_gradient}} for the pseudo-likelihood gradient computation.
 }

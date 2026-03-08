@@ -16,15 +16,22 @@
 #' @param num_particles number of particles to use in the particle filter
 #' @param scheme type of splitting scheme to apply "Lie-Trotter" or "Strang"
 #' @param split_around_fixed_point logical. If TRUE, split the SDE around the fixed point
+#' @param ESS_threshold threshold for effective sample size to trigger 
+#' resampling in the particle filter
+#' @param proposal_weight weight for the proposal distribution 
+#' in the particle filter (between 0 and 1)
 #' @param verbose logical. If TRUE, print information during the computation
-#' @return array of dimension (n_samples, num_states, N) with the smoothed trajectories7
+#' @param print_timing logical. If TRUE, print timing information for each step
+#' @return array of dimension (n_samples, num_states, N) 
+#' with the smoothed trajectories7
 #' @importFrom mvtnorm dmvnorm
 #' @export
 forward_filtering_backward_sampling <-
   function(data,n_samples,forward_filter=NULL,sde_params,
            potential_params=NULL,error_params,error_dist,polygon,U0,lambda,
            num_particles,scheme="Lie-Trotter",split_around_fixed_point=FALSE,
-           verbose=FALSE) {
+           ESS_threshold=1,proposal_weight=0.5,
+           verbose = FALSE,print_timing = FALSE) {
   # forward filtering
   
   if (is.null(forward_filter)) {
@@ -36,8 +43,8 @@ forward_filtering_backward_sampling <-
                                            num_particles = num_particles,
                                            split_around_fixed_point = split_around_fixed_point,
                                            scheme = scheme,ESS_threshold=ESS_threshold,
-                                           proposal_weight=roposal_weight,
-                                           verbose = verbose,print_timing = FALSE)
+                                           proposal_weight=proposal_weight,
+                                           verbose = verbose,print_timing = print_timing)
   }
     
   particles =  forward_filter$particles
@@ -127,8 +134,6 @@ forward_filtering_backward_sampling <-
           backward_weights[k,j] <- weights[k, j]*exp(log_dmvnorm_chol_cpp(U_tilde_next,
                                                          mean = mean,
                                                          cholSigma = chol_cpp(Q)))
-          
-          
         }
       }
       

@@ -164,6 +164,7 @@ is_point_inside_polygon <- function(x, polygon) {
 #' @param polygon SpatialPolygon object representing the polygon
 #' @param lambda penalty parameter
 #' @return Numeric vector of length 2: penalisation term
+#' @export
 compute_push <- function(x, polygon, lambda) {
   
   if (lambda==Inf) {

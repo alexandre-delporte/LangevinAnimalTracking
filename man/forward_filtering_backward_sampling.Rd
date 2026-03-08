@@ -20,7 +20,10 @@ forward_filtering_backward_sampling(
   num_particles,
   scheme = "Lie-Trotter",
   split_around_fixed_point = FALSE,
-  verbose = FALSE
+  ESS_threshold = 1,
+  proposal_weight = 0.5,
+  verbose = FALSE,
+  print_timing = FALSE
 )
 }
 \arguments{
@@ -51,7 +54,15 @@ will run the particle filter first.}
 
 \item{split_around_fixed_point}{logical. If TRUE, split the SDE around the fixed point}
 
+\item{ESS_threshold}{threshold for effective sample size to trigger 
+resampling in the particle filter}
+
+\item{proposal_weight}{weight for the proposal distribution 
+in the particle filter (between 0 and 1)}
+
 \item{verbose}{logical. If TRUE, print information during the computation}
+
+\item{print_timing}{logical. If TRUE, print timing information for each step}
 }
 \value{
 array of dimension (n_samples, num_states, N) with the smoothed trajectories7

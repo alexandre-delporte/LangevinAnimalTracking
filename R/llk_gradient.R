@@ -344,9 +344,9 @@ llk_gradient = function(data,push_mat,potential_grad_mat,tau,nu,omega,
     U_next <- as.numeric(data[j+1,c("X1","X2","V1","V2")])
     delta <- as.numeric(data[j+1,"time"] - data[j,"time"])
     push <- push_mat[j,]
-    push_next <- push_mat[j,]
+    push_next <- push_mat[j+1,]
     potential_grad <- potential_grad_mat[j,]
-    potential_grad_next <- potential_grad_mat[j,]
+    potential_grad_next <- potential_grad_mat[j+1,]
     if (verbose) {
       cat("---- Step", j, "----\n")
       cat("delta:", delta, "\n")

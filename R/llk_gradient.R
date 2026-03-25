@@ -1,5 +1,5 @@
 
-#' Function to compute partial derivatives of RACVM covariance matrix Q (Delporte et .al 2025)
+#' Function to compute partial derivatives of RACVM covariance matrix Q
 #' @param tau RACVM parameter tau
 #' @param nu RACVM parameter nu
 #' @param omega RACVM parameter omega

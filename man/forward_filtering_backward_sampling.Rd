@@ -23,7 +23,8 @@ forward_filtering_backward_sampling(
   ESS_threshold = 1,
   proposal_weight = 0.5,
   verbose = FALSE,
-  print_timing = FALSE
+  print_timing = FALSE,
+  obs_error_params = NULL
 )
 }
 \arguments{
@@ -65,7 +66,8 @@ in the particle filter (between 0 and 1)}
 \item{print_timing}{logical. If TRUE, print timing information for each step}
 }
 \value{
-array of dimension (n_samples, num_states, N) with the smoothed trajectories7
+array of dimension (n_samples, num_states, N) 
+with the smoothed trajectories7
 }
 \description{
 Forward filtering backward Sampling for penalised Langevin SDE 

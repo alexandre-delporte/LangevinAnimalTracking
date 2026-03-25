@@ -417,6 +417,9 @@ static inline double compute_weight_from_cache(
 //' @param proposal_weight Numeric between 0 and 1, weight attributed to the previous state in the Gaussian proposal
 //' @param verbose Logical, whether to print progress messages
 //' @param print_timing Logical, whether to print profiling timing results (default: FALSE)
+//' @param obs_error_params Optional list of length N, where each element is an error_params
+//'   list for the corresponding observation. When provided (non-NULL), overrides error_params
+//'   at each time step. Useful for ARGOS data where location class varies per observation.
 //' 
 //' @return List with elements:
 //'   \itemize{
@@ -449,7 +452,8 @@ List particle_filter2D_cpp(
     double ESS_threshold,
     double proposal_weight,
     bool verbose,
-    bool print_timing
+    bool print_timing,
+    Nullable<List> obs_error_params
 ) {
   
   // Initialize timing
@@ -566,6 +570,16 @@ List particle_filter2D_cpp(
     log_1mp_argos = std::log(1.0 - p_argos);
   }
   
+  // Unpack obs_error_params if provided (for time-varying error params, e.g. ARGOS classes)
+  bool has_obs_error_params = obs_error_params.isNotNull();
+  List obs_ep_list;
+  if (has_obs_error_params) {
+    obs_ep_list = as<List>(obs_error_params);
+    if ((int)obs_ep_list.size() != N) {
+      Rcpp::stop("obs_error_params must have length equal to the number of observations (%d)", N);
+    }
+  }
+  
   // Main particle filter loop
   for (int j = 0; j < N - 1; ++j) {
     
@@ -575,6 +589,40 @@ List particle_filter2D_cpp(
     
     double delta = deltas(j);
     arma::vec y = observations.row(j + 1).subvec(1, 2).t();
+    
+    // --- Resolve error parameters for this time step ---
+    // Use per-observation params if supplied, otherwise fall back to global precomputed values
+    double step_sigma_obs   = sigma_obs;
+    double step_scale       = scale;
+    double step_df          = df;
+    double step_rho         = rho;
+    double step_a           = a;
+    double step_log_p       = log_p_argos;
+    double step_log_1mp     = log_1mp_argos;
+    arma::mat step_invS1    = invS_argos1;
+    arma::mat step_invS2    = invS_argos2;
+    List step_error_params  = error_params;   // used by propagate_particle_with_cache
+    
+    if (has_obs_error_params && error_dist == "argos") {
+      // obs_error_params is indexed by observation (j+1 is the obs used at step j)
+      step_error_params = as<List>(obs_ep_list[j + 1]);
+      step_df          = as<double>(step_error_params["df"]);
+      step_sigma_obs   = as<double>(step_error_params["sigma_obs"]);
+      step_rho         = as<double>(step_error_params["rho"]);
+      step_a           = as<double>(step_error_params["a"]);
+      double step_p    = as<double>(step_error_params["p"]);
+      step_log_p       = std::log(step_p);
+      step_log_1mp     = std::log(1.0 - step_p);
+      
+      arma::mat Sigma1 = step_sigma_obs*step_sigma_obs *
+                         arma::mat{{1, step_rho*std::sqrt(step_a)},
+                                   {step_rho*std::sqrt(step_a), 1}};
+      arma::mat Sigma2 = step_sigma_obs*step_sigma_obs *
+                         arma::mat{{1, -step_rho*std::sqrt(step_a)},
+                                   {-step_rho*std::sqrt(step_a), 1}};
+      step_invS1 = arma::inv(step_df/(step_df-2.0) * Sigma1);
+      step_invS2 = arma::inv(step_df/(step_df-2.0) * Sigma2);
+    }
     
     // --- PREDICTION STEP ---
     if (verbose) Rcout << "  Prediction step...\n";
@@ -618,7 +666,7 @@ List particle_filter2D_cpp(
       arma::vec U_next = propagate_particle_with_cache(
         U_prev, y, M, delta, push,
         potential_params, tau, nu, omega, lambda,
-        error_dist, error_params, scheme, polygon_coords,
+        error_dist, step_error_params, scheme, polygon_coords,
         ind_fp, use_precomputed_LQ, L_precomputed, Q_precomputed,
         proposal_weight,
         particle_cache[k]);
@@ -642,8 +690,8 @@ List particle_filter2D_cpp(
       weights(k, j + 1) = compute_weight_from_cache(
         U_pred, y, M,
         error_dist, scheme,
-        proposal_weight, sigma_obs, scale, df,
-        invS_argos1, invS_argos2, log_p_argos, log_1mp_argos,a,rho,
+        proposal_weight, step_sigma_obs, step_scale, step_df,
+        step_invS1, step_invS2, step_log_p, step_log_1mp, step_a, step_rho,
         particle_cache[k]);  // INPUT: use cached values
      }
     

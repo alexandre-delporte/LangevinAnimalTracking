@@ -769,13 +769,20 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
 #'   \item ind_fixed_point_mat: Matrix of fixed point indices for each particle at each time step
 #'   
 #' }
+#' @param obs_error_params Optional list of length \code{N} (number of
+#'   observations), where each element is an error parameter list for the
+#'   corresponding observation. When supplied and \code{error_dist = "argos"},
+#'   overrides \code{error_params} at each time step so that different ARGOS
+#'   location classes can be handled. Build this with
+#'   \code{\link{make_argos_obs_params}}. Default \code{NULL}.
 #' @export
 #'
 particle_filter2D <- function(data,sde_params,potential_params=NULL,
                               error_params,error_dist="normal",
                               polygon,U0,lambda,num_particles,scheme="Lie-Trotter",
                               split_around_fixed_point=FALSE,ESS_threshold=0.95,
-                              proposal_weight=0.5,verbose=FALSE) {
+                              proposal_weight=0.5,verbose=FALSE,
+                              obs_error_params=NULL) {
   
   
   cat("Running particle filter with params:", as.numeric(sde_params), "\n")
@@ -838,6 +845,17 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
   ess_history[1] <- 1 / sum(weights[,1]^2)
   
   
+  # Validate obs_error_params if supplied
+  if (!is.null(obs_error_params)) {
+    if (length(obs_error_params) != N) {
+      stop("obs_error_params must have length equal to nrow(data) (", N, ")")
+    }
+    if (error_dist != "argos") {
+      warning("obs_error_params is currently only used when error_dist = 'argos'. Ignoring.")
+      obs_error_params <- NULL
+    }
+  }
+  
   if (verbose) cat("Initialization complete. Starting particle filtering...\n")
   
   # Precompute time steps
@@ -865,6 +883,9 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
     # Extract current observation
     y <-as.numeric(data[j+1,c("Y1","Y2")])
     if (verbose) cat("Observation:", y, "\n")
+    
+    # Resolve error params for this time step (per-observation ARGOS class support)
+    step_error_params <- if (!is.null(obs_error_params)) obs_error_params[[j + 1]] else error_params
     
     # Prediction step
     if (verbose) cat("Prediction step...\n")
@@ -909,7 +930,7 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
       
       U_next<-propagate_langevin_particle(U_prev,y,M,delta,push,
                                               potential_params,tau,nu,omega,lambda,
-                                              error_dist,error_params,
+                                              error_dist,step_error_params,
                                               scheme,polygon,ind_fixed_point,
                                               L_list[[k]],
                                               Q_list[[k]],proposal_weight,
@@ -936,7 +957,7 @@ particle_filter2D <- function(data,sde_params,potential_params=NULL,
       weights[k, j + 1] <- compute_langevin_weight(U_pred,U_prev,y,M,
                                                        delta,push,
                                                        potential_params,tau,nu,omega,
-                                                       error_dist,error_params,
+                                                       error_dist,step_error_params,
                                                        scheme,
                                                        ind_fixed_point,
                                                        L_list[[k]],

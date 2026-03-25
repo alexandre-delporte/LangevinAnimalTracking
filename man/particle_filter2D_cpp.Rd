@@ -20,7 +20,8 @@ particle_filter2D_cpp(
   ESS_threshold,
   proposal_weight,
   verbose,
-  print_timing
+  print_timing,
+  obs_error_params
 )
 }
 \arguments{
@@ -63,6 +64,10 @@ particle_filter2D_cpp(
 \item{verbose}{Logical, whether to print progress messages}
 
 \item{print_timing}{Logical, whether to print profiling timing results (default: FALSE)}
+
+\item{obs_error_params}{Optional list of length N, where each element is an error_params
+list for the corresponding observation. When provided (non-NULL), overrides error_params
+at each time step. Useful for ARGOS data where location class varies per observation.}
 }
 \value{
 List with elements:

@@ -18,7 +18,8 @@ Rcpp::List particle_filter2D_cpp(const arma::mat& observations,const Rcpp::List&
     double ESS_threshold,
     double proposal_weight,
     bool verbose = false,
-    bool print_timing = false);
+    bool print_timing = false,
+    Rcpp::Nullable<Rcpp::List> obs_error_params = R_NilValue);
 
 #endif // PARTICLE_FILTER_H
 

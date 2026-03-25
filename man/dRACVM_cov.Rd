@@ -2,7 +2,7 @@
 % Please edit documentation in R/llk_gradient.R
 \name{dRACVM_cov}
 \alias{dRACVM_cov}
-\title{Function to compute partial derivatives of RACVM covariance matrix Q (Delporte et .al 2025)}
+\title{Function to compute partial derivatives of RACVM covariance matrix Q}
 \usage{
 dRACVM_cov(tau, nu, omega, h)
 }
@@ -20,5 +20,5 @@ List with three elements: derivatives of Q with respect to
 #' tau, nu, and omega : three 4x4 matrices: dQ_dtau, dQ_dnu, dQ_domega
 }
 \description{
-Function to compute partial derivatives of RACVM covariance matrix Q (Delporte et .al 2025)
+Function to compute partial derivatives of RACVM covariance matrix Q
 }

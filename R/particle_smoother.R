@@ -31,7 +31,8 @@ forward_filtering_backward_sampling <-
            potential_params=NULL,error_params,error_dist,polygon,U0,lambda,
            num_particles,scheme="Lie-Trotter",split_around_fixed_point=FALSE,
            ESS_threshold=1,proposal_weight=0.5,
-           verbose = FALSE,print_timing = FALSE) {
+           verbose = FALSE,print_timing = FALSE,
+           obs_error_params = NULL) {
   # forward filtering
   
   if (is.null(forward_filter)) {
@@ -44,7 +45,8 @@ forward_filtering_backward_sampling <-
                                            split_around_fixed_point = split_around_fixed_point,
                                            scheme = scheme,ESS_threshold=ESS_threshold,
                                            proposal_weight=proposal_weight,
-                                           verbose = verbose,print_timing = print_timing)
+                                           verbose = verbose,print_timing = print_timing,
+                                           obs_error_params = obs_error_params)
   }
     
   particles =  forward_filter$particles

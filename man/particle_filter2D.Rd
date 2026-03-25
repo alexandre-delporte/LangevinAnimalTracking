@@ -18,7 +18,8 @@ particle_filter2D(
   split_around_fixed_point = FALSE,
   ESS_threshold = 0.95,
   proposal_weight = 0.5,
-  verbose = FALSE
+  verbose = FALSE,
+  obs_error_params = NULL
 )
 }
 \arguments{
@@ -57,6 +58,13 @@ of the drift. Only works for mixture of gaussian potential.}
 \item{proposal_weight}{Weight in gaussian proposal (between 0 and 1)}
 
 \item{verbose}{Logical, whether to print progress messages (default: FALSE)}
+
+\item{obs_error_params}{Optional list of length \code{N} (number of
+observations), where each element is an error parameter list for the
+corresponding observation. When supplied and \code{error_dist = "argos"},
+overrides \code{error_params} at each time step so that different ARGOS
+location classes can be handled. Build this with
+\code{\link{make_argos_obs_params}}. Default \code{NULL}.}
 }
 \value{
 A list containing:

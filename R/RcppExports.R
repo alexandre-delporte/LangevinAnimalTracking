@@ -33,6 +33,9 @@ solve_ODE_cpp <- function(U, delta, push, potential_params, ind_fixed_point) {
 #' @param proposal_weight Numeric between 0 and 1, weight attributed to the previous state in the Gaussian proposal
 #' @param verbose Logical, whether to print progress messages
 #' @param print_timing Logical, whether to print profiling timing results (default: FALSE)
+#' @param obs_error_params Optional list of length N, where each element is an error_params
+#'   list for the corresponding observation. When provided (non-NULL), overrides error_params
+#'   at each time step. Useful for ARGOS data where location class varies per observation.
 #' 
 #' @return List with elements:
 #'   \itemize{
@@ -49,8 +52,8 @@ solve_ODE_cpp <- function(U, delta, push, potential_params, ind_fixed_point) {
 #'     \item ind_fixed_point: (if split_around_fixed_point=TRUE) Matrix of fixed point indices
 #'   }
 #' @export
-particle_filter2D_cpp <- function(observations, sde_params, potential_params, error_params, error_dist, polygon_coords, U0, lambda, num_particles, scheme, split_around_fixed_point, ESS_threshold, proposal_weight, verbose, print_timing) {
-    .Call(`_LangevinAnimalTracking_particle_filter2D_cpp`, observations, sde_params, potential_params, error_params, error_dist, polygon_coords, U0, lambda, num_particles, scheme, split_around_fixed_point, ESS_threshold, proposal_weight, verbose, print_timing)
+particle_filter2D_cpp <- function(observations, sde_params, potential_params, error_params, error_dist, polygon_coords, U0, lambda, num_particles, scheme, split_around_fixed_point, ESS_threshold, proposal_weight, verbose, print_timing, obs_error_params) {
+    .Call(`_LangevinAnimalTracking_particle_filter2D_cpp`, observations, sde_params, potential_params, error_params, error_dist, polygon_coords, U0, lambda, num_particles, scheme, split_around_fixed_point, ESS_threshold, proposal_weight, verbose, print_timing, obs_error_params)
 }
 
 #' Compute exact covariance matrix for Ornstein-Uhlenbeck process (C++ version)

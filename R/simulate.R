@@ -325,7 +325,8 @@ simulate_2D_trajectory <- function(n_sim,sde_params,
 
 #' Visualizes both true and observed animal movement trajectories 
 #' within a specified polygon boundary.
-#' @param data df from `simulate_2D_trajectory()`. If multiple IDs, individual trajectories are on individual facets
+#' @param data df from `simulate_2D_trajectory()`. If multiple IDs, 
+#' individual trajectories are on individual facets
 #' @param polygon SpatialPolygons object defining the boundary (from `sp` package)
 #' @param true_opacity Opacity for true trajectory line (0-1, default: 0.5)
 #' @param obs_opacity Opacity for observed trajectory line (0-1, default: 0.5)

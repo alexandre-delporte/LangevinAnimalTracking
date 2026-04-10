@@ -5,7 +5,8 @@
 #' @param data data frame with columns Y1,Y2 for observations, time for time
 #' @param sde_params List of parameters tau,nu,omega
 #' @param potential_params Parameters for a mixture of Gaussian potential.
-#' @param sigma_obs Standard deviation of the (isotropic) measurement error
+#' @param sigma_obs Array of covariance matrices for the 
+#' measurement error for each observation
 #' @param polygon polygon defining the ecological domain of interest
 #' @param lambda Penalisation parameter. Default : Inf (no penalisation)
 #' @param U0 Initial guess for the hidden state. A vector of length 4 with position and velocity for RACVM, 
@@ -130,13 +131,13 @@ kalman_filter <- function(data,sde_params,potential_params=NULL,
     }
       
     # Correction step
-    K <- R_pred %*% t(H) %*% solve(H %*% R_pred %*% t(H) + sigma_obs^2 * diag(2))
+    K <- R_pred %*% t(H) %*% solve(H %*% R_pred %*% t(H) + sigma_obs[,,k])
     U_hat[k, ] <- U_pred + K %*% (Y[k, ] - H %*% U_pred)
     R <- (diag(length(U0)) - K %*% H) %*% R_pred
     
   
     loglik_vector[k-1] <- dmvnorm(Y[k,],mean=H%*%U_pred,
-                              sigma=H%*%R_pred%*%t(H)+sigma_obs^2*diag(2),
+                              sigma=H%*%R_pred%*%t(H)+sigma_obs[,,k],
                               log=TRUE)
     
     loglik <- loglik + loglik_vector[k-1]
@@ -153,7 +154,8 @@ kalman_filter <- function(data,sde_params,potential_params=NULL,
 #' @param potential_hessian Function to compute Hessian matrix of the potential surface
 #' @param potential_params Parameters for a mixture of gaussian potential. Only necessary
 #' if split_around_fixed_point is TRUE.
-#' @param sigma_obs Standard deviation of the (isotropic) measurement error
+#' @param sigma_obs Array of covariance matrices for the 
+#' measurement error for each observation
 #' @param polygon polygon defining the ecological domain of interest
 #' @param lambda Penalisation parameter. Default : Inf (no penalisation)
 #' @param U0 Initial guess for the hidden state. A vector of length 4 with position and velocity for RACVM, 
@@ -210,6 +212,9 @@ extended_kalman_filter <- function(data,sde_params,potential_hessian,
   Gamma <- rbind(
       cbind(matrix(0,2,2), matrix(0,2,2)),
       cbind(matrix(0,2,2), 4*nu^2/pi/tau*diag(2)))
+  
+  loglik <- 0
+  loglik_vector <- numeric(n_steps-1)
   
   for (k in 2:n_steps) {
     
@@ -290,11 +295,17 @@ extended_kalman_filter <- function(data,sde_params,potential_hessian,
     }
     
       # correction
-    K <- R_pred %*% t(H) %*% solve(H %*% R_pred %*% t(H) + sigma_obs^2 * diag(2))
+    K <- R_pred %*% t(H) %*% solve(H %*% R_pred %*% t(H) + sigma_obs[,,k])
     U_hat[k, ] <- U_pred + K %*% (Y[k, ] - H %*% U_pred)
     R <- (diag(4) - K %*% H) %*% R_pred
+    
+    loglik_vector[k-1] <- dmvnorm(Y[k,],mean=H%*%U_pred,
+                                  sigma=H%*%R_pred%*%t(H)+sigma_obs[,,k],
+                                  log=TRUE)
+    
+    loglik <- loglik + loglik_vector[k-1]
   }
   
-  return(U_hat)
+  return(list(U=U_hat,loglik=loglik,loglik_vector=loglik_vector))
 }
 

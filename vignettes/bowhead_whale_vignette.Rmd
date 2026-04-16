@@ -1,0 +1,525 @@
+---
+title: "Bowhead whale track analysis with LangevinAnimalTracking"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Bowhead whale track analysis with LangevinAnimalTracking}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width  = 7,
+  fig.height = 5
+)
+```
+
+This vignette demonstrates how to fit the penalized Langevin movement model to
+a real bowhead whale telemetry track using the SGD estimation algorithm, and
+how to compare the results with the smoothSDE Kalman-filter baseline.
+
+The data consist of Argos satellite telemetry locations for multiple individuals
+tagged in Hudson Bay / Foxe Basin (Canada). We focus on a single individual
+(ID 128145) for illustration.
+
+## 1. Setup and data loading
+
+```{r libraries, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(lubridate)
+library(sf)
+library(sp)
+library(rnaturalearth)
+library(rnaturalearthhires)
+library(ggplot2)
+library(smoothSDE)
+library(LangevinAnimalTracking)
+
+set.seed(42)
+```
+
+```{r load-data}
+data_path <- system.file("extdata", "bowhead_data.csv",
+                         package = "LangevinAnimalTracking")
+data <- read.csv(data_path) |>
+  mutate(
+    timestamp = ymd_hms(timestamp),
+    whale_id  = as.factor(individual.local.identifier)
+  )
+
+# Keep locations inside the study area
+bbox_lims <- c(bottom = 61, top = 72.5, left = -95, right = -70)
+
+data <- data |>
+  filter(
+    location.lat  >= bbox_lims["bottom"],
+    location.lat  <= bbox_lims["top"],
+    location.long >= bbox_lims["left"],
+    location.long <= bbox_lims["right"]
+  )
+```
+
+## 2. Exploratory visualisation
+
+```{r land-polygon}
+bbox      <- st_bbox(c(xmin = -95, xmax = -70, ymin = 61, ymax = 72.5),
+                     crs = st_crs(4326))
+bbox_poly <- st_as_sfc(bbox)
+
+land <- ne_countries(scale = "large", returnclass = "sf")
+land <- st_make_valid(land)
+land <- st_crop(land, bbox)
+```
+
+```{r plot-all-individuals}
+ggplot() +
+  geom_sf(data = land, fill = "grey85", colour = "grey60",
+          linewidth = 0.25) +
+  geom_path(data = data,
+            aes(location.long, location.lat, colour = whale_id),
+            linewidth = 0.25, alpha = 0.6) +
+  geom_point(data = data,
+             aes(location.long, location.lat, colour = whale_id),
+             size = 0.3, alpha = 0.8) +
+  geom_point(data = data |> distinct(whale_id, .keep_all = TRUE),
+             aes(location.long, location.lat),
+             shape = 3, size = 3, colour = "red", stroke = 0.8) +
+  scale_colour_viridis_d(guide = "none") +
+  coord_sf(xlim = c(bbox_lims["left"],  bbox_lims["right"]),
+           ylim = c(bbox_lims["bottom"], bbox_lims["top"])) +
+  labs(x = "Longitude", y = "Latitude",
+       title = "Bowhead whale telemetry tracks (all individuals)") +
+  theme_minimal(base_size = 11)
+```
+
+## 3. Data preprocessing
+
+```{r preprocessing}
+# Remove low-quality Argos class Z, keep relevant columns
+dataprep <- data |>
+  filter(!(argos.lc %in% c("Z"))) |>
+  select(ID = whale_id, timestamp,
+         location.long, location.lat, argos.lc)
+
+# Compute cumulative time in hours, remove duplicate timestamps
+dataprep$time <- 0
+rm_index <- logical(nrow(dataprep))
+
+for (id in unique(dataprep$ID)) {
+  idx   <- dataprep$ID == id
+  steps <- as.numeric(diff(dataprep$timestamp[idx])) / 3600
+  if (length(steps) > 0) {
+    rm_index[idx] <- c(FALSE, steps == 0)
+    dataprep$time[idx] <- c(0, cumsum(steps))
+  }
+}
+dataprep <- dataprep[!rm_index, ]
+```
+
+## 4. Select focal individual and project coordinates
+
+```{r focal-individual}
+ID_FOCAL <- 128145
+
+ggplot() +
+  geom_sf(data = land, fill = "grey85", colour = "grey60",
+          linewidth = 0.25) +
+  geom_path(data = dataprep[dataprep$ID == ID_FOCAL, ],
+            aes(location.long, location.lat),
+            color = "steelblue", linewidth = 0.25, alpha = 0.6) +
+  geom_point(data = dataprep[dataprep$ID == ID_FOCAL, ],
+             aes(location.long, location.lat),
+             size = 0.3, alpha = 0.8) +
+  geom_point(data = dataprep[dataprep$ID == ID_FOCAL, ] |>
+               distinct(ID, .keep_all = TRUE),
+             aes(location.long, location.lat),
+             shape = 3, size = 3, colour = "red", stroke = 0.8) +
+  scale_colour_viridis_d(guide = "none") +
+  coord_sf(xlim = c(bbox_lims["left"],  bbox_lims["right"]),
+           ylim = c(bbox_lims["bottom"], bbox_lims["top"])) +
+  labs(x = "Longitude", y = "Latitude") +
+  theme_minimal(base_size = 11)
+```
+
+```{r project-coords}
+data_SGD <- dataprep |>
+  filter(ID == ID_FOCAL) |>
+  rename(Y1 = location.long, Y2 = location.lat)
+
+# Project to Canada Atlas Lambert (EPSG:3978), convert to km
+data_SGD_sf   <- st_as_sf(data_SGD, coords = c("Y1", "Y2"), crs = 4326)
+data_SGD_proj <- st_transform(data_SGD_sf, crs = 3978)
+coords        <- st_coordinates(data_SGD_proj)
+data_SGD$Y1   <- coords[, 1] / 1000
+data_SGD$Y2   <- coords[, 2] / 1000
+
+obs_ep <- make_argos_obs_params(dataprep[dataprep$ID == ID_FOCAL, ]$argos.lc)
+```
+
+## 5. Build the water-domain polygon
+
+```{r water-polygon}
+water_sf <- st_difference(bbox_poly, st_union(land)) |>
+  st_collection_extract("POLYGON") |>
+  st_make_valid() |>
+  st_transform(crs = 3978)
+
+polygon_coords <- do.call(rbind, lapply(
+  seq_along(st_geometry(water_sf)), function(i) {
+    geom <- st_geometry(water_sf)[[i]]
+    do.call(rbind, lapply(seq_along(geom), function(j) {
+      do.call(rbind, lapply(seq_along(geom[[j]]), function(k) {
+        coords_k           <- as.data.frame(geom[[j]][[k]])
+        colnames(coords_k) <- c("V1", "V2")
+        coords_k$group     <- paste(i, j, k, sep = "_")
+        coords_k
+      }))
+    }))
+  }
+))
+
+polygon <- Polygon(1e-3 * as.matrix(
+  polygon_coords[polygon_coords$group == "1_1_1", c("V1", "V2")]
+))
+```
+
+```{r plot-focal-track}
+poly_df        <- as.data.frame(polygon@coords)
+single_track_df <- data_SGD
+
+ggplot() +
+  geom_polygon(data = poly_df,
+               aes(x = V1, y = V2),
+               fill = "#cce5f0", colour = "grey45", linewidth = 0.25) +
+  geom_path(data = single_track_df,
+            aes(x = Y1, y = Y2),
+            colour = "darkorange", linewidth = 0.45, alpha = 0.8) +
+  geom_point(data = single_track_df,
+             aes(x = Y1, y = Y2),
+             colour = "firebrick", size = 0.6, alpha = 0.5) +
+  geom_point(data = single_track_df[1, ],
+             aes(x = Y1, y = Y2),
+             shape = 3, size = 4, colour = "black", stroke = 1) +
+  labs(x = "Easting (km)", y = "Northing (km)",
+       title = paste0("Bowhead whale ID ", ID_FOCAL, " — observed track")) +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.minor = element_blank())
+```
+
+## 6. Fit the smoothSDE baseline (Kalman filter)
+
+```{r fit-kalman}
+formulas <- list(mu1 = ~1, mu2 = ~1, tau = ~1, nu = ~1)
+
+# Measurement error covariance from Brost et al. 2015
+df_per_class    <- c(16.5, 2.3, 3, 3, 3, 3)
+error_per_class <- sqrt(df_per_class / (df_per_class - 2)) *
+  c(1.365, 1.089, 2.259, 2.720, 2.702, 13.338)
+names(error_per_class) <- c("1", "2", "3", "0", "A", "B")
+
+H <- array(rep(diag(2), nrow(dataprep)), dim = c(2, 2, nrow(dataprep)))
+for (lc in c("0", "1", "2", "3", "A", "B")) {
+  H[, , dataprep$argos.lc == lc] <- diag(rep(error_per_class[lc]^2, 2))
+}
+
+ctcrw <- SDE$new(formulas = formulas,
+                 data     = data_SGD,
+                 type     = "CTCRW",
+                 response = c("Y1", "Y2"),
+                 par0     = c(mu1 = 0, mu2 = 0, tau = 30, nu = 2),
+                 other_data = list("H" = H[, , dataprep$ID == ID_FOCAL]),
+                 fixpar   = c("mu1", "mu2"))
+ctcrw$fit()
+
+# Extract estimates and standard errors
+sde_est <- as.list(ctcrw$tmb_rep(), what = "Estimate")
+sde_se  <- as.list(ctcrw$tmb_rep(), what = "Std. Error")
+
+log_tau_hat <- sde_est$coeff_fe[3]
+log_nu_hat  <- sde_est$coeff_fe[4]
+log_tau_se  <- sde_se$coeff_fe[3]
+log_nu_se   <- sde_se$coeff_fe[4]
+
+results_sde <- data.frame(
+  Method   = "smoothSDE (Kalman filter)",
+  param    = c("tau", "nu"),
+  estimate = c(exp(log_tau_hat), exp(log_nu_hat)),
+  se       = c(exp(log_tau_hat) * log_tau_se,
+               exp(log_nu_hat)  * log_nu_se),
+  ci_lower = c(exp(log_tau_hat - 1.96 * log_tau_se),
+               exp(log_nu_hat  - 1.96 * log_nu_se)),
+  ci_upper = c(exp(log_tau_hat + 1.96 * log_tau_se),
+               exp(log_nu_hat  + 1.96 * log_nu_se)),
+  row.names = NULL
+)
+
+print(results_sde)
+```
+
+## 7. Run particle filter with smoothSDE parameters
+
+```{r particle-filter-setup}
+sde_params <- list(tau   = ctcrw$par()[1, "tau"],
+                   nu    = ctcrw$par()[1, "nu"],
+                   omega = 0)
+
+sigma_obs          <- 3
+argos_error_params <- list(sigma_obs = sigma_obs, rho = 0.2,
+                           a = 0.7, p = 0.5, df = 3)
+
+x_star           <- matrix(c(680, 7050), ncol = 2, byrow = TRUE)
+B_list           <- list(diag(c(1 / 50^2, 1 / 50^2)))
+alpha            <- c(0)
+potential_params <- list(x_star = x_star, B = B_list, alpha = alpha)
+```
+
+The particle filter below takes several minutes to run. The code is shown for
+reproducibility; pre-computed results are loaded in the next chunk.
+
+```{r particle-filter, eval=FALSE}
+set.seed(2026)
+filtered <- particle_filter2D_cpp(
+  observations     = as.matrix(data_SGD[, c("time", "Y1", "Y2")]),
+  sde_params       = sde_params,
+  potential_params = potential_params,
+  error_params     = argos_error_params,
+  error_dist       = "argos",
+  polygon_coords   = polygon@coords,
+  U0               = as.numeric(c(data_SGD[1, c("Y1", "Y2")], 0, 0)),
+  lambda           = sqrt(1.8),
+  num_particles    = 1000,
+  split_around_fixed_point = FALSE,
+  scheme           = "Lie-Trotter",
+  ESS_threshold    = 0.8,
+  proposal_weight  = 0.5,
+  verbose          = FALSE,
+  print_timing     = FALSE,
+  obs_error_params = obs_ep
+)
+
+saveRDS(filtered, system.file("extdata", "penalized_filtered_bowhead.rds",
+                              package = "LangevinAnimalTracking"))
+```
+
+```{r particle-filter-load, echo=FALSE}
+filtered <- readRDS(system.file("extdata", "penalized_filtered_bowhead.rds",
+                                package = "LangevinAnimalTracking"))
+```
+
+```{r particle-filter-estimates}
+estimates <- as.data.frame(get_PF_mean(filtered))
+```
+
+## 8. Run Kalman filter (no penalty)
+
+```{r kalman-no-penalty}
+filtered_nopenalty <- kalman_filter(
+  data_SGD[, c("time", "Y1", "Y2")],
+  sde_params,
+  potential_params = potential_params,
+  sigma_obs        = H[, , dataprep$ID == ID_FOCAL],
+  polygon,
+  lambda           = Inf,
+  U0               = as.numeric(c(data_SGD[1, c("Y1", "Y2")], 0, 0)),
+  R0               = diag(c(1, 1, 1, 1)),
+  split_around_fixed_point = FALSE
+)
+
+estimates_nopenalty <- as.data.frame(filtered_nopenalty$U) |>
+  rename(X1 = V1, X2 = V2, V1 = V3, V2 = V4)
+```
+
+## 9. Compare fraction of locations on land
+
+```{r fraction-on-land}
+polygon_sf <- st_sfc(st_polygon(list(polygon@coords)), crs = 32616)
+
+filtered_sf_pen   <- st_as_sf(estimates,         coords = c("X1", "X2"), crs = 32616)
+filtered_sf_nopen <- st_as_sf(estimates_nopenalty, coords = c("X1", "X2"), crs = 32616)
+
+pct_land_pen   <- mean(!st_within(filtered_sf_pen,   polygon_sf, sparse = FALSE))
+pct_land_nopen <- mean(!st_within(filtered_sf_nopen, polygon_sf, sparse = FALSE))
+
+cat("Fraction on land - with penalization:    ", round(pct_land_pen,   4) * 100, "\n")
+cat("Fraction on land - without penalization: ", round(pct_land_nopen, 4) * 100, "\n")
+```
+
+## 10. Compare tracks from both methods
+
+```{r plot-comparison}
+estimates$method           <- "Penalized particle filter"
+estimates_nopenalty$method <- "Kalman filter"
+both <- rbind(estimates, estimates_nopenalty)
+
+ggplot() +
+  geom_polygon(data = poly_df,
+               aes(x = V1, y = V2),
+               fill = "#cce5f0", colour = "grey45", linewidth = 0.25) +
+  geom_point(data = data_SGD,
+             aes(x = Y1, y = Y2),
+             colour = "red", size = 0.4, alpha = 0.4) +
+  geom_path(data = both,
+            aes(x = X1, y = X2, colour = method),
+            linewidth = 0.5, alpha = 0.8) +
+  scale_colour_manual(values = c("Penalized particle filter" = "darkorange",
+                                 "Kalman filter"             = "steelblue")) +
+  labs(x = "Easting (km)", y = "Northing (km)", colour = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.minor = element_blank(), legend.position = "bottom")
+```
+
+```{r plot-comparison-zoom}
+# Zoom on a region where differences are most visible
+ggplot() +
+  geom_polygon(data = poly_df,
+               aes(x = V1, y = V2),
+               fill = "#cce5f0", colour = "grey45", linewidth = 0.25) +
+  geom_point(data = data_SGD,
+             aes(x = Y1, y = Y2),
+             colour = "red", size = 0.4, alpha = 0.4) +
+  geom_path(data = both,
+            aes(x = X1, y = X2, colour = method),
+            linewidth = 0.5, alpha = 0.8) +
+  scale_colour_manual(values = c("Penalized particle filter" = "darkorange",
+                                 "Kalman filter"             = "steelblue")) +
+  coord_cartesian(xlim = c(500, 700), ylim = c(1800, 2500)) +
+  labs(x = "Easting (km)", y = "Northing (km)", colour = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.minor = element_blank(), legend.position = "bottom")
+```
+
+## 11. Estimate parameters with SGD
+
+The SGD optimisation requires approximately 7 hours on a standard laptop.
+The code below shows the exact call used to produce the pre-saved results
+that are loaded in the next chunk.
+
+```{r sgd-fit, eval=FALSE}
+theta_init <- list(tau = 30, nu = 2, omega = 0)
+
+set.seed(2026)
+sgd <- SGD_Fisher(
+  data             = data_SGD,
+  sde_params       = theta_init,
+  fixpar           = c("omega"),
+  SGD_iter         = 200,
+  potential_params = potential_params,
+  error_dist       = "argos",
+  error_params     = argos_error_params,
+  scheme           = "Lie-Trotter",
+  polygon          = polygon,
+  U0               = as.numeric(c(data_SGD[1, c("Y1", "Y2")], 0, 0)),
+  lambda           = sqrt(1.8),
+  num_particles    = 500,
+  split_around_fixed_point = FALSE,
+  verbose          = TRUE,
+  gamma0           = 1e-4,
+  K_preheat        = 50,
+  alpha            = 2/3,
+  C_heating        = 1/10,
+  n_smooth_samples = 10,
+  obs_error_params = obs_ep
+)
+
+saveRDS(sgd, system.file("extdata", "sgd_bowhead.rds",
+                         package = "LangevinAnimalTracking"))
+```
+
+```{r sgd-load, echo=FALSE}
+sgd <- readRDS(system.file("extdata", "sgd_bowhead.rds",
+                           package = "LangevinAnimalTracking"))
+```
+
+## 12. Extract SGD estimates and confidence intervals
+
+```{r sgd-results}
+Delta_final <- sgd$Delta
+I_fisher    <- t(Delta_final) %*% Delta_final
+Sigma_sgd   <- solve(I_fisher)
+se_sgd      <- sqrt(diag(Sigma_sgd))
+
+theta_hat <- sgd$theta[nrow(sgd$theta), ]
+
+results_sgd <- data.frame(
+  Method   = "SGD (Lie-Trotter)",
+  param    = names(theta_hat),
+  estimate = theta_hat,
+  se       = se_sgd,
+  ci_lower = theta_hat - 1.96 * se_sgd,
+  ci_upper = theta_hat + 1.96 * se_sgd,
+  row.names = NULL
+)
+
+print(results_sgd)
+```
+
+## 13. Comparison table: SGD vs Kalman filter
+
+```{r comparison-table}
+results_sgd_sub <- results_sgd |>
+  filter(param %in% c("tau", "nu")) |>
+  select(Method, param, estimate, ci_lower, ci_upper)
+
+results_sde_sub <- results_sde |>
+  select(Method, param, estimate, ci_lower, ci_upper)
+
+comparison_table <- bind_rows(results_sgd_sub, results_sde_sub) |>
+  arrange(param, Method)
+
+print(comparison_table)
+```
+
+## 14. Posterior track reconstruction
+
+```{r plot-posterior}
+posterior_df <- do.call(rbind, lapply(
+  seq_along(sgd$smooth_samples), function(i) {
+    traj        <- as.data.frame(sgd$smooth_samples[[i]][, c("X1", "X2")])
+    traj$sample <- i
+    traj
+  }
+))
+
+ggplot() +
+  geom_polygon(data = poly_df,
+               aes(x = V1, y = V2),
+               fill = "#cce5f0", colour = "grey45", linewidth = 0.25) +
+  geom_path(data = posterior_df,
+            aes(x = X1, y = X2, group = sample),
+            colour = "darkorange", alpha = 0.45, linewidth = 0.35) +
+  geom_point(data = data_SGD,
+             aes(x = Y1, y = Y2),
+             colour = "firebrick", size = 0.7, alpha = 0.55) +
+  labs(x = "Easting (km)", y = "Northing (km)") +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.minor = element_blank())
+```
+
+## 15. SGD convergence check
+
+```{r plot-convergence}
+theta_SGD           <- data.frame(sgd$theta)
+theta_SGD$iteration <- seq_len(nrow(theta_SGD))
+
+df_long <- theta_SGD |>
+  pivot_longer(cols = c("tau", "nu"),
+               names_to = "parameter", values_to = "value")
+
+convergence_theme <- theme_minimal(base_size = 14) +
+  theme(
+    strip.text         = element_text(size = 14, face = "bold"),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor   = element_blank(),
+    legend.position    = "none"
+  )
+
+ggplot(df_long, aes(x = iteration, y = value, color = parameter)) +
+  geom_line(linewidth = 0.5) +
+  facet_wrap(~ parameter, scales = "free_y", ncol = 1,
+             labeller = label_parsed) +
+  scale_color_manual(values = c(tau = "steelblue", nu = "darkorange")) +
+  labs(x = "Iteration", y = "Value") +
+  convergence_theme
+```

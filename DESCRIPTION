@@ -33,5 +33,11 @@ Suggests:
     testthat (>= 3.0.0),
     knitr,
     rmarkdown,
-    mvtnorm,sp
+    tidyverse,
+    lubridate,
+    sf,
+    rnaturalearth,
+    rnaturalearthhires,
+    smoothSDE
+VignetteBuilder: knitr
 RoxygenNote: 7.3.3

@@ -20,3 +20,5 @@ _site/
 *~
 *.swp
 .Rproj.user/
+/doc/
+/Meta/

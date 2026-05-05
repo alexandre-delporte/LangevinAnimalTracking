@@ -4,7 +4,7 @@
 #include <RcppArmadillo.h>
 #include "utility.h"
 
-// Solve ODE step for Langevin splitting scheme
+// Solve ODE step in splitting scheme
 arma::vec solve_ODE_cpp(const arma::vec& U,
                         double delta,
                         const arma::vec& push,

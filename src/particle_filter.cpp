@@ -7,7 +7,7 @@
 using namespace Rcpp;
 using namespace arma;
 
-// Structure to cache intermediate computations to avoid duplication
+// Structure to cache intermediate computations to avoid computing same matrices two times
 struct ParticleIntermediate {
     arma::vec U_hat;        // After ODE step
     arma::vec mean;         // Mean from SDE
@@ -19,7 +19,6 @@ struct ParticleIntermediate {
 };
 
 // Propagate particle and cache intermediate computations for weight calculation
-// Properly handles both Lie-Trotter and Strang schemes
 static inline arma::vec propagate_particle_with_cache(
     const arma::vec& U_prev,
     const arma::vec& y,
@@ -250,7 +249,6 @@ static inline arma::vec propagate_particle_with_cache(
 }
 
 // Compute weight using cached intermediate values (avoids recomputation)
-// Properly handles both Lie-Trotter and Strang schemes
 static inline double compute_weight_from_cache(
     const arma::vec& U_pred,
     const arma::vec& y,
@@ -273,9 +271,6 @@ static inline double compute_weight_from_cache(
 ) {
   
   static const arma::mat I2 = arma::eye<arma::mat>(2, 2);
-  
-  // Skip ODE, SDE - use cached values!
-  // Already have: cache.U_hat, cache.mean, cache.cholQ/cholQxx, cache.invQ/invQxx, cache.gaussian_proposal
   
   double log_weight = 0.0;
   double local_llk = 0.0;
@@ -305,7 +300,7 @@ static inline double compute_weight_from_cache(
       global_timer.record("weight_densities");
       
     } else if (error_dist == "argos") {
-      // For argos, we still need to compute proposals (different random draw in weight computation)
+      // For argos, still needed to compute proposals (different random draw in weight computation)
       List gaussian_proposal1 = product_gaussian_cpp(cache.invQ, invS_argos1,
                                                      cache.mean, y, M, proposal_weight);
       List gaussian_proposal2 = product_gaussian_cpp(cache.invQ, invS_argos2,
@@ -731,7 +726,7 @@ List particle_filter2D_cpp(
       double ess_ratio = ess_history(j + 1) / num_particles;
       
       if (ess_ratio < ESS_threshold) {
-        // Resample using systematic resampling (much faster than naive search)
+        // Resample using systematic resampling
         resampled_at(j) = true;
         if (verbose) Rcout << "  Resampling (ESS ratio = " << ess_ratio << ")\n";
         
@@ -745,7 +740,6 @@ List particle_filter2D_cpp(
         for (int k = 0; k < num_particles; ++k) {
           double u = u0 + k / double(num_particles);
           
-          // Move idx forward until cum_weights[idx] >= u
           while (idx < num_particles - 1 && cum_weights(idx) < u) {
             idx++;
           }
@@ -762,21 +756,20 @@ List particle_filter2D_cpp(
       } else {
         resampled_at(j) = false;
         for (int k = 0; k < num_particles; ++k) {
-          ancestors(k, j) = k + 1;  // No resampling, keep same indices
+          ancestors(k, j) = k + 1;  // No resampling
         }
         if (verbose) Rcout << "  No resampling (ESS ratio = " << ess_ratio << ")\n";
       }
     }
-  }  // End main loop
+  }  
   
   if (verbose) Rcout << "Particle filtering complete.\n";
   
-  // Print timing results only if requested
+  // Print timing results if requested
   if (print_timing) {
     global_timer.print_timings();
   }
   
-  // Prepare output
   List result = List::create(
     Named("particles") = particles,
     Named("weights") = weights,

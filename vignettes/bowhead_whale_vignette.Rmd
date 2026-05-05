@@ -295,7 +295,7 @@ filtered <- particle_filter2D_cpp(
   ESS_threshold    = 0.8,
   proposal_weight  = 0.5,
   verbose          = FALSE,
-  print_timing     = FALSE,
+  print_timing     = TRUE,
   obs_error_params = obs_ep
 )
 

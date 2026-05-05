@@ -213,9 +213,51 @@ dRACVM_link=function(tau,omega,h) {
 }
 
 
+#' Derivatives of the Gaussian mixture potential gradient w.r.t. potential parameters
+
+#' @param x Numeric vector of length 2 (position)
+#' @param x_star Matrix of attraction centres, one row per component
+#' @param potential_params List with elements alpha (vector), B (list of 2x2 matrices)
+#' @return List with elements:
+#'   dalpha: list of J 2-vectors, dalpha[[k]] = d(grad_H)/d(alpha_k)
+#'   dB: list of J 3x2 matrices, dB[[k]][i,] = d(grad_H)/d(B_k param i)
+#'       where B params are ordered (B11, B12, B22)
+dH_grad_dxi <- function(x, x_star, potential_params) {
+  alpha <- potential_params$alpha
+  B     <- potential_params$B
+  J     <- length(alpha)
+
+  dalpha <- vector("list", J)
+  dB     <- vector("list", J)
+
+  for (k in seq_len(J)) {
+    d     <- x - x_star[k, ]
+    Bk    <- B[[k]]
+    Bd    <- as.numeric(Bk %*% d)
+    quad  <- as.numeric(t(d) %*% Bd)
+    ek    <- exp(-quad)
+    a2ek  <- 2 * alpha[k] * ek
+
+    dalpha[[k]] <- 2 * ek * Bd
+
+    dBk <- matrix(0, nrow = 3, ncol = 2)
+    # B11 (l=1, m=1): E_11*d = (d1,0), quadratic factor d1^2
+    dBk[1, ] <- a2ek * (c(d[1], 0)    - d[1]^2         * Bd)
+    # B12 (l=1,m=2, symmetric): (E_12+E_21)*d = (d2,d1), factor 2*d1*d2
+    dBk[2, ] <- a2ek * (c(d[2], d[1]) - 2 * d[1] * d[2] * Bd)
+    # B22 (l=2, m=2): E_22*d = (0,d2), quadratic factor d2^2
+    dBk[3, ] <- a2ek * (c(0, d[2])    - d[2]^2         * Bd)
+
+    dB[[k]] <- dBk
+  }
+
+  list(dalpha = dalpha, dB = dB)
+}
+
+
 #' Compute gradient of log-likelihood for one time step
 #' Supports both Lie-Trotter and Strang schemes
-#' 
+#'
 #' @param U_next State vector at next time step (X1, X2, V1, V2)
 #' @param U_prev State vector at previous time step (X1, X2, V1, V2)
 #' @param delta Time step size
@@ -226,14 +268,20 @@ dRACVM_link=function(tau,omega,h) {
 #' @param omega RACVM parameter omega
 #' @param scheme Integration scheme: "Lie-Trotter" or "Strang"
 #' @param push_next Push vector at next time step (length 2) - REQUIRED for Strang scheme
-#' @param potential_grad_next Gradient of potential at next time step (length 2) 
+#' @param potential_grad_next Gradient of potential at next time step (length 2)
 #' - REQUIRED for Strang scheme
+#' @param potential_params Optional list with elements alpha, B for the Gaussian mixture
+#'   potential. When provided, gradients w.r.t. potential parameters are also returned.
+#' @param x_star Optional matrix of attraction centres (one row per component).
+#'   Required when potential_params is provided.
 #' @param verbose If TRUE, print detailed computation steps
-#' @return Numeric vector of length 3 with gradients w.r.t. tau, nu, omega
-#'    
+#' @return Named numeric vector with gradients w.r.t. tau, nu, omega, and optionally
+#'   alpha_1,...,alpha_J, B11_1, B12_1, B22_1, ..., B11_J, B12_J, B22_J
+#'
 llk_gradient_one_step <- function(U_next, U_prev, delta, push, potential_grad,
-                                  tau, nu, omega, scheme = "Lie-Trotter", 
+                                  tau, nu, omega, scheme = "Lie-Trotter",
                                   push_next = NULL, potential_grad_next = NULL,
+                                  potential_params = NULL, x_star = NULL,
                                   verbose = FALSE) {
   
   # Get covariance and link matrices and their derivatives
@@ -298,55 +346,105 @@ llk_gradient_one_step <- function(U_next, U_prev, delta, push, potential_grad,
   
   grad <- numeric(3)
   names(grad) <- c("tau", "nu", "omega")
-  
+
   for (i in 1:3) {
     term1 <- -0.5 * log_det_Q_derivs[i]
-    
     term2 <- 0.5 * t(r) %*% Q_inv_derivs[[i]] %*% r
-    
     term3 <- t(r) %*% Q_inv %*% mu_derivs[[i]]
-    
     grad[i] <- term1 + term2 + term3
-    
     if (verbose) {
       cat(sprintf("Parameter %s: term1=%.6f, term2=%.6f, term3=%.6f, total=%.6f\n",
                   names(grad)[i], term1, term2, term3, grad[i]))
     }
   }
-  
+
+  # Gradient w.r.t. potential parameters xi = (alpha_1,...,alpha_J, B11_1,...,B22_J)
+  if (!is.null(potential_params) && !is.null(x_star)) {
+    J      <- length(potential_params$alpha)
+    X_prev <- U_prev[1:2]
+    X_next <- U_next[1:2]
+
+    dxi_j <- dH_grad_dxi(X_prev, x_star, potential_params)
+    if (scheme == "Strang") dxi_jplus1 <- dH_grad_dxi(X_next, x_star, potential_params)
+
+    
+    xi_grad_one <- function(dH_j, dH_jplus1 = NULL) {
+      if (scheme == "Lie-Trotter") {
+        dmu <- -delta * as.numeric(T_mat %*% c(0, 0, dH_j))
+        as.numeric(t(r) %*% Q_inv %*% dmu)
+      } else {
+        combined <- c(0, 0, dH_jplus1) + as.numeric(T_mat %*% c(0, 0, dH_j))
+        as.numeric(-(delta / 2) * t(r) %*% Q_inv %*% combined)
+      }
+    }
+
+    n_xi     <- 4 * J
+    grad_xi  <- numeric(n_xi)
+    xi_names <- character(n_xi)
+    idx      <- 1
+
+    for (k in seq_len(J)) {
+      dH_jp1        <- if (scheme == "Strang") dxi_jplus1$dalpha[[k]] else NULL
+      grad_xi[idx]  <- xi_grad_one(dxi_j$dalpha[[k]], dH_jp1)
+      xi_names[idx] <- paste0("alpha_", k)
+      idx <- idx + 1
+    }
+
+    B_labels <- c("B11", "B12", "B22")
+    for (k in seq_len(J)) {
+      for (i in 1:3) {
+        dH_jp1        <- if (scheme == "Strang") dxi_jplus1$dB[[k]][i, ] else NULL
+        grad_xi[idx]  <- xi_grad_one(dxi_j$dB[[k]][i, ], dH_jp1)
+        xi_names[idx] <- paste0(B_labels[i], "_", k)
+        idx <- idx + 1
+      }
+    }
+
+    names(grad_xi) <- xi_names
+    grad <- c(grad, grad_xi)
+  }
+
   return(grad)
 }
 
 #' Compute gradient of log-likelihood over entire trajectory
-#' 
+#'
 #' @param data Data frame with columns X1, X2, V1, V2, time
-#' containing "true" positions and velocities at each time step
-#' @param push_mat Matrix of shape (n_steps-1, 2) containing the push
-#' at each time step
-#' @param potential_grad_mat Matrix of shape (n_steps-1, 2) containing the
-#' gradient of the potential at each time step
+#'   containing "true" positions and velocities at each time step
+#' @param push_mat Matrix of shape (n_steps, 2) containing the push at each time step
+#' @param potential_grad_mat Matrix of shape (n_steps, 2) containing the gradient of
+#'   the potential at each time step
 #' @param tau RACVM parameter tau
 #' @param nu RACVM parameter nu
 #' @param omega RACVM parameter omega
-#' @param scheme Integration scheme
+#' @param scheme Integration scheme: "Lie-Trotter" or "Strang"
+#' @param potential_params Optional list with elements alpha, B for the Gaussian mixture
+#'   potential. When provided, gradients w.r.t. potential parameters are appended.
 #' @param verbose If TRUE, print detailed computation steps
-#' @return Numeric vector of length 3 with gradients w.r.t. tau, nu, omega
-#' 
-llk_gradient = function(data,push_mat,potential_grad_mat,tau,nu,omega,
-                        scheme="Lie-Trotter",verbose=FALSE) {
-  
+#' @return Matrix of per-step gradients (n_steps-1 rows). Columns are tau, nu, omega,
+#'   and optionally alpha_1,...,alpha_J, B11_1, B12_1, B22_1, ..., B11_J, B12_J, B22_J.
+#'
+llk_gradient <- function(data, push_mat, potential_grad_mat, tau, nu, omega,
+                         scheme = "Lie-Trotter", potential_params = NULL,
+                         verbose = FALSE) {
+
   n_steps <- nrow(data)
-  total_grad <- matrix(0,ncol=3,nrow=n_steps-1)
-  
-  for (j in 1:(n_steps-1)) {
-    
-    U_prev <- as.numeric(data[j,c("X1","X2","V1","V2")])
-    U_next <- as.numeric(data[j+1,c("X1","X2","V1","V2")])
-    delta <- as.numeric(data[j+1,"time"] - data[j,"time"])
-    push <- push_mat[j,]
-    push_next <- push_mat[j+1,]
-    potential_grad <- potential_grad_mat[j,]
-    potential_grad_next <- potential_grad_mat[j+1,]
+  x_star  <- potential_params$x_star
+
+  # Determine number of output columns from a trial step
+  n_xi    <- if (!is.null(potential_params)) 4 * length(potential_params$alpha) else 0
+  n_cols  <- 3 + n_xi
+  total_grad <- matrix(0, ncol = n_cols, nrow = n_steps - 1)
+
+  for (j in 1:(n_steps - 1)) {
+    U_prev              <- as.numeric(data[j,   c("X1","X2","V1","V2")])
+    U_next              <- as.numeric(data[j+1, c("X1","X2","V1","V2")])
+    delta               <- as.numeric(data[j+1, "time"] - data[j, "time"])
+    push                <- push_mat[j, ]
+    push_next           <- push_mat[j+1, ]
+    potential_grad      <- potential_grad_mat[j, ]
+    potential_grad_next <- potential_grad_mat[j+1, ]
+
     if (verbose) {
       cat("---- Step", j, "----\n")
       cat("delta:", delta, "\n")
@@ -355,14 +453,17 @@ llk_gradient = function(data,push_mat,potential_grad_mat,tau,nu,omega,
       cat("push:", push, "\n")
       cat("potential_grad:", potential_grad, "\n")
     }
-    step_grad <- llk_gradient_one_step(U_next,U_prev,delta,push,
-                                       potential_grad,
-                                       tau,nu,omega,scheme,
-                                       push_next,potential_grad_next,
-                                       verbose)
-    total_grad[j,] <- step_grad
+
+    step_grad <- llk_gradient_one_step(
+      U_next, U_prev, delta, push, potential_grad,
+      tau, nu, omega, scheme,
+      push_next, potential_grad_next,
+      potential_params = potential_params, x_star = x_star,
+      verbose = verbose
+    )
+    total_grad[j, ] <- step_grad
   }
 
-  
+  colnames(total_grad) <- names(step_grad)
   return(total_grad)
 }

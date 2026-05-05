@@ -4,7 +4,7 @@
 #include <RcppArmadillo.h>
 #include <string>
 
-// ------------------- Particle Propagation -------------------
+
 Rcpp::List particle_filter2D_cpp(const arma::mat& observations,const Rcpp::List& sde_params,
     const Rcpp::List& potential_params,
     const Rcpp::List& error_params,

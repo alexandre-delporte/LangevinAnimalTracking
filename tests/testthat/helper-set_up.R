@@ -33,7 +33,7 @@ sde_params <- list(tau = 1, nu=5,omega = 0.1)
 
 
 # Define initial position
-U0 <- c(35, 15,0,0) 
+U0 <- c(25, 5,0,0) 
 
 
 # Potential parameters

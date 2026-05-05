@@ -4,7 +4,6 @@
 #include <RcppArmadillo.h>
 #include <unordered_set>
 
-// Note: Do NOT use `using namespace` in header files; instead, fully qualify types
 
 // Gradient of Gaussian mixture excluding some components
 arma::vec mix_gaussian_grad_cpp(const arma::vec& x,

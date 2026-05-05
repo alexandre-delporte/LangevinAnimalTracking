@@ -17,8 +17,16 @@
 #'   scale), and \code{omega} (angular velocity). Names are used to label
 #'   columns in the output matrix.
 #' @param fixpar A character vector of parameter names to hold fixed during
-#'   optimisation (their gradients and updates are zeroed out). Default
-#'   \code{NULL} means all parameters are estimated.
+#'   optimisation (their gradients and updates are zeroed out). Applies to both
+#'   movement parameters (\code{tau}, \code{nu}, \code{omega}) and, when
+#'   \code{estimate_potential_params = TRUE}, potential parameters
+#'   (\code{alpha_1}, \code{B11_1}, \code{B12_1}, \code{B22_1}, ...).
+#'   Default \code{NULL} means all active parameters are estimated.
+#' @param estimate_potential_params Logical. If \code{TRUE}, the potential
+#'   parameters (\eqn{\alpha_k} and entries of \eqn{B_k}) are jointly estimated
+#'   alongside the movement parameters. The centres \eqn{x_k^*} are always
+#'   fixed. Individual potential parameters can be held fixed via
+#'   \code{fixpar}. Default \code{FALSE}.
 #' @param SGD_iter A positive integer giving the total number of SGD
 #'   iterations to run (across all three phases).
 #' @param potential_params A named list of parameters for the mixture of
@@ -100,34 +108,45 @@
 #'
 #' @export
 SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
-                       potential_params = NULL, error_dist = NULL, error_params = NULL,
+                       potential_params = NULL, estimate_potential_params = FALSE,
+                       error_dist = NULL, error_params = NULL,
                        scheme = "Lie-Trotter", polygon, U0, lambda,
                        num_particles, split_around_fixed_point = FALSE,
                        verbose = FALSE, gamma0 = 1e-4, K_preheat = 1000,
                        alpha = 2/3, C_heating = 1/1000, n_smooth_samples = 0,
                        obs_error_params = NULL) {
-  
+
   if (split_around_fixed_point) {
     stop("Not implemented yet with splitting around fixed point")
   }
-  
-  p <- length(sde_params)
+
+  x_star    <- potential_params$x_star
   param_names <- names(sde_params)
   if (is.null(param_names)) stop("sde_params must be a named list")
-  
+
+  if (estimate_potential_params) {
+    J <- length(potential_params$alpha)
+    xi_names <- c(paste0("alpha_", 1:J),
+                  unlist(lapply(1:J, function(j) paste0(c("B11","B12","B22"), "_", j))))
+    param_names <- c(param_names, xi_names)
+    xi_init <- c(potential_params$alpha,
+                 unlist(lapply(potential_params$B, function(Bk) c(Bk[1,1], Bk[1,2], Bk[2,2]))))
+    theta_init <- c(unlist(sde_params), xi_init)
+  } else {
+    J <- 0
+    theta_init <- unlist(sde_params)
+  }
+
+  p       <- length(param_names)
   fix_idx <- which(param_names %in% fixpar)
-  
+
   theta <- matrix(0, nrow = SGD_iter + 1, ncol = p)
   colnames(theta) <- param_names
-  theta[1, ] <- unlist(sde_params)
-  
-  n <- nrow(data)
+  theta[1, ] <- theta_init
+
+  n   <- nrow(data)
   Delta <- matrix(0, ncol = p, nrow = n - 1)
   I_p   <- diag(1, p)
-  
-  alpha_pot <- potential_params$alpha
-  B         <- potential_params$B
-  x_star    <- potential_params$x_star
   
   # Heating phase tracking (3rd-order exponential mean filter on gradient norm)
   heating_finished        <- FALSE
@@ -141,12 +160,25 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
   
   for (k in 1:SGD_iter) {
     if (verbose) message("SGD iter ", k, "\n")
-    
+
+    sde_params_k <- as.list(theta[k, c("tau", "nu", "omega")])
+
+    if (estimate_potential_params) {
+      alpha_k <- theta[k, paste0("alpha_", 1:J)]
+      B_k <- lapply(1:J, function(j) {
+        b <- theta[k, paste0(c("B11", "B12", "B22"), "_", j)]
+        matrix(c(b[1], b[2], b[2], b[3]), 2, 2)
+      })
+      potential_params_k <- list(alpha = alpha_k, B = B_k, x_star = x_star)
+    } else {
+      potential_params_k <- potential_params
+    }
+
     # Run particle filter
     filter <- particle_filter2D_cpp(
       observations     = as.matrix(data[, c("time", "Y1", "Y2")]),
-      sde_params       = as.list(theta[k, ]),
-      potential_params = potential_params,
+      sde_params       = sde_params_k,
+      potential_params = potential_params_k,
       error_params     = error_params,
       error_dist       = error_dist,
       polygon_coords   = polygon@coords,
@@ -158,11 +190,11 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
       verbose = FALSE, print_timing = FALSE,
       obs_error_params = obs_error_params
     )
-    
+
     # Obtain latent trajectory via forward-filtering backward-sampling (FFBS)
     backward_samples <- forward_filtering_backward_sampling(
       data, 1, forward_filter = filter,
-      as.list(theta[k, ]), potential_params,
+      sde_params_k, potential_params_k,
       error_params, error_dist, polygon,
       U0, lambda, num_particles,
       scheme = scheme,
@@ -172,31 +204,33 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
     )
     z <- t(apply(backward_samples, c(2, 3), mean))
     colnames(z) <- c("X1", "X2", "V1", "V2")
-    
+
     # Compute push and potential gradient
     push_mat           <- matrix(NA, nrow = n, ncol = 2)
     potential_grad_mat <- matrix(NA, nrow = n, ncol = 2)
-    
+
     for (t in 1:n) {
       X <- z[t, c("X1", "X2")]
       push_mat[t, ]           <- compute_push(X, polygon, lambda)
       potential_grad_mat[t, ] <- mix_gaussian_grad_cpp(
-        X, x_star, list(B = B, alpha = alpha_pot), exclude = integer(0)
+        X, x_star, list(B = potential_params_k$B, alpha = potential_params_k$alpha),
+        exclude = integer(0)
       )
     }
-    
+
     # Compute gradient of pseudo-likelihood
     z_df      <- as.data.frame(z)
     z_df$time <- data$time
-    
+
     grad_mat <- llk_gradient(
       data = z_df, push_mat = push_mat,
       potential_grad_mat = potential_grad_mat,
       tau = theta[k, "tau"], nu = theta[k, "nu"],
       omega = theta[k, "omega"], scheme = scheme,
+      potential_params = if (estimate_potential_params) potential_params_k else NULL,
       verbose = FALSE
     )
-    
+
     v_k <- colSums(grad_mat)
     names(v_k) <- param_names
     if (length(fix_idx) > 0) v_k[fix_idx] <- 0

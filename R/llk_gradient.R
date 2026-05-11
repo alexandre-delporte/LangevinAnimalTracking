@@ -214,14 +214,21 @@ dRACVM_link=function(tau,omega,h) {
 
 
 #' Derivatives of the Gaussian mixture potential gradient w.r.t. potential parameters
-
+#'
+#' Diagonal Cholesky entries L11_k and L22_k are parametrised on the log scale
+#' (stored as logL11_k = log(L11_k), logL22_k = log(L22_k)) to keep them
+#' strictly positive during optimisation.  Gradients for these entries are
+#' therefore w.r.t. logL11 and logL22 via the chain rule:
+#'   d/d(logL) = L * d/dL.
+#' The off-diagonal entry L21_k is unconstrained and its gradient is unchanged.
+#'
 #' @param x Numeric vector of length 2 (position)
 #' @param x_star Matrix of attraction centres, one row per component
 #' @param potential_params List with elements alpha (vector), B (list of 2x2 matrices)
 #' @return List with elements:
 #'   dalpha: list of J 2-vectors, dalpha[[k]] = d(grad_H)/d(alpha_k)
-#'   dB: list of J 3x2 matrices, dB[[k]][i,] = d(grad_H)/d(B_k param i)
-#'       where B params are ordered (B11, B12, B22)
+#'   dB: list of J 3x2 matrices, dB[[k]][i,] = d(grad_H)/d(xi_k param i)
+#'       where params are ordered (logL11, L21, logL22)
 dH_grad_dxi <- function(x, x_star, potential_params) {
   alpha <- potential_params$alpha
   B     <- potential_params$B
@@ -240,15 +247,28 @@ dH_grad_dxi <- function(x, x_star, potential_params) {
 
     dalpha[[k]] <- 2 * ek * Bd
 
-    dBk <- matrix(0, nrow = 3, ncol = 2)
-    # B11 (l=1, m=1): E_11*d = (d1,0), quadratic factor d1^2
-    dBk[1, ] <- a2ek * (c(d[1], 0)    - d[1]^2         * Bd)
-    # B12 (l=1,m=2, symmetric): (E_12+E_21)*d = (d2,d1), factor 2*d1*d2
-    dBk[2, ] <- a2ek * (c(d[2], d[1]) - 2 * d[1] * d[2] * Bd)
-    # B22 (l=2, m=2): E_22*d = (0,d2), quadratic factor d2^2
-    dBk[3, ] <- a2ek * (c(0, d[2])    - d[2]^2         * Bd)
+    # d(grad_H)/d(B entries)
+    dBk_raw <- matrix(0, nrow = 3, ncol = 2)
+    dBk_raw[1, ] <- a2ek * (c(d[1], 0)    - d[1]^2         * Bd)  # d/dB11
+    dBk_raw[2, ] <- a2ek * (c(d[2], d[1]) - 2 * d[1] * d[2] * Bd) # d/dB12
+    dBk_raw[3, ] <- a2ek * (c(0, d[2])    - d[2]^2         * Bd)  # d/dB22
 
-    dB[[k]] <- dBk
+    # Chain rule through B = L L^T: dB11/dL11=2L11, dB12/dL11=L21, dB22/dL11=0
+    #                                dB11/dL21=0,    dB12/dL21=L11, dB22/dL21=2L21
+    #                                dB11/dL22=0,    dB12/dL22=0,   dB22/dL22=2L22
+    Lk  <- t(chol(Bk))
+    L11 <- Lk[1, 1]; L21 <- Lk[2, 1]; L22 <- Lk[2, 2]
+
+    dLk <- matrix(0, nrow = 3, ncol = 2)
+    dLk[1, ] <- dBk_raw[1, ] * 2 * L11 + dBk_raw[2, ] * L21     # d/dL11
+    dLk[2, ] <- dBk_raw[2, ] * L11     + dBk_raw[3, ] * 2 * L21  # d/dL21
+    dLk[3, ] <- dBk_raw[3, ] * 2 * L22                            # d/dL22
+
+    # Convert diagonal rows to log parametrisation: d/d(logL) = L * d/dL
+    dLk[1, ] <- dLk[1, ] * L11
+    dLk[3, ] <- dLk[3, ] * L22
+
+    dB[[k]] <- dLk
   }
 
   list(dalpha = dalpha, dB = dB)
@@ -276,7 +296,9 @@ dH_grad_dxi <- function(x, x_star, potential_params) {
 #'   Required when potential_params is provided.
 #' @param verbose If TRUE, print detailed computation steps
 #' @return Named numeric vector with gradients w.r.t. tau, nu, omega, and optionally
-#'   alpha_1,...,alpha_J, B11_1, B12_1, B22_1, ..., B11_J, B12_J, B22_J
+#'   alpha_1,...,alpha_J, logL11_1, L21_1, logL22_1, ..., logL11_J, L21_J, logL22_J
+#'   where logL11_k = log(L_k[1,1]) and logL22_k = log(L_k[2,2]) are the
+#'   log-diagonal entries of the lower Cholesky factor of B_k
 #'
 llk_gradient_one_step <- function(U_next, U_prev, delta, push, potential_grad,
                                   tau, nu, omega, scheme = "Lie-Trotter",
@@ -390,7 +412,7 @@ llk_gradient_one_step <- function(U_next, U_prev, delta, push, potential_grad,
       idx <- idx + 1
     }
 
-    B_labels <- c("B11", "B12", "B22")
+    B_labels <- c("logL11", "L21", "logL22")
     for (k in seq_len(J)) {
       for (i in 1:3) {
         dH_jp1        <- if (scheme == "Strang") dxi_jplus1$dB[[k]][i, ] else NULL
@@ -422,7 +444,8 @@ llk_gradient_one_step <- function(U_next, U_prev, delta, push, potential_grad,
 #'   potential. When provided, gradients w.r.t. potential parameters are appended.
 #' @param verbose If TRUE, print detailed computation steps
 #' @return Matrix of per-step gradients (n_steps-1 rows). Columns are tau, nu, omega,
-#'   and optionally alpha_1,...,alpha_J, B11_1, B12_1, B22_1, ..., B11_J, B12_J, B22_J.
+#'   and optionally alpha_1,...,alpha_J, logL11_1, L21_1, logL22_1, ...,
+#'   logL11_J, L21_J, logL22_J.
 #'
 llk_gradient <- function(data, push_mat, potential_grad_mat, tau, nu, omega,
                          scheme = "Lie-Trotter", potential_params = NULL,

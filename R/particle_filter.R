@@ -1074,31 +1074,31 @@ get_PF_mean<-function(PF_results) {
 #' @export
 #' @import ggplot2
 #' @importFrom sp SpatialPolygons
-compare_trajectories_in_polygon <- function(U_true, U_est, 
+compare_trajectories_in_polygon <- function(U_true, U_est,
                                             polygon, true_line_opacity = 0.5,
                                             est_line_opacity = 0.1,
                                             zoom_box = NULL,
                                             labels=c("True path","Estimated path")) {
-  
+
   # Extract the coordinates of the polygon
   polygon_coords <- as.data.frame(polygon@coords)
-  
+
   # Create data frames for the true and estimated trajectory points
   U_true_df <- as.data.frame(U_true)
   colnames(U_true_df) <- c("X1", "X2")
   U_true_df$Type <- labels[1]
-  
+
   U_est_df <- as.data.frame(U_est)
   colnames(U_est_df) <- c("X1", "X2")
   U_est_df$Type <- labels[2]
-  
+
   # Combine data for easier legend handling
   combined_df <- rbind(U_true_df, U_est_df)
   combined_df$Type <- factor(combined_df$Type, levels = labels)
-  
+
   colors<-c("black","orange")
   names(colors)=labels
-  
+
   p <- ggplot() +
     geom_polygon(data = polygon_coords, aes(x = V1, y = V2), fill = NA, color = "grey40") +
     geom_point(data = combined_df, aes(x = X1, y = X2, color = Type), size = 1, alpha = 0.2) +
@@ -1135,7 +1135,7 @@ compare_trajectories_in_polygon <- function(U_true, U_est,
 #' @importFrom sp SpatialPolygons
 #'
 particle_cloud<-function(t0,data,particles,weights,polygon=NULL) {
-  
+
   dfp <- data.frame(x = particles[,1,t0], y = particles[,2,t0], w=weights[,t0])
   p<-ggplot() + geom_point(data=dfp, aes(x,y,size=w),alpha=0.6) +
     geom_point(aes(x=data$Y1[t0], y=data$Y2[t0]), colour="red", size=3) +

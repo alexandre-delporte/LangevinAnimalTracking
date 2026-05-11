@@ -101,15 +101,14 @@ RACVM_link <- function(tau,omega,dt) {
 
 
 
-#' Function to project a point on the closest point on the boundary of the polygon
-#'@param x Numeric vector of length 2: coordinates of the point
-#'@param polygon SpatialPolygon object representing the polygon
-#'@param grad logical. If TRUE, also compute the gradient of the projection
-#'@return A list with elements:
-#' - point: Numeric vector of length 2, coordinates of the closest point on the boundary
-#' - gradient: 2x2 matrix representing the gradient of the projection (if grad=TRUE)
-#' 
-closest_point_on_boundary <- function(x, polygon,grad=TRUE) {
+#' Find the closest point on the boundary of a single polygon
+#' @param x Numeric vector of length 2: coordinates of the point
+#' @param polygon Polygon object (with @coords slot)
+#' @param grad logical. If TRUE, also compute the gradient of the projection
+#' @return A list with elements:
+#'  - point: Numeric vector of length 2, coordinates of the closest boundary point
+#'  - gradient: 2x2 Jacobian of the projection (or NULL at vertices)
+closest_point_on_boundary <- function(x, polygon, grad = TRUE) {
   coords <- polygon@coords
   point_to_segment_closest_point <- function(p, v, w) {
     l2 <- sum((w - v)^2)
@@ -118,11 +117,11 @@ closest_point_on_boundary <- function(x, polygon,grad=TRUE) {
     projection <- v + t_val * (w - v)
     return(list(point = projection, t = t_val))
   }
-  
+
   min_dist <- Inf
   closest_point <- NULL
   gradient <- NULL
-  
+
   for (i in 1:(nrow(coords) - 1)) {
     v <- coords[i, ]
     w <- coords[i + 1, ]
@@ -130,20 +129,19 @@ closest_point_on_boundary <- function(x, polygon,grad=TRUE) {
     projection <- result$point
     t_val <- result$t
     dist <- sqrt(sum((x - projection)^2))
-    
+
     if (dist < min_dist) {
       min_dist <- dist
       closest_point <- projection
       e <- w - v
-      # Check if projection is strictly inside the edge (not a vertex)
       if (t_val > 0 && t_val < 1) {
-        gradient <- (e %*% t(e)) / sum(e * e) 
+        gradient <- (e %*% t(e)) / sum(e * e)
       } else {
-        gradient <- NULL  # Non-differentiable at vertices
+        gradient <- NULL
       }
     }
   }
-  
+
   return(list(point = closest_point, gradient = gradient))
 }
 
@@ -166,7 +164,7 @@ is_point_inside_polygon <- function(x, polygon) {
 #' @return Numeric vector of length 2: penalisation term
 #' @export
 compute_push <- function(x, polygon, lambda) {
-  
+
   if (lambda==Inf) {
     return(c(0,0))
   }

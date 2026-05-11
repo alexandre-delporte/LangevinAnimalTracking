@@ -49,7 +49,7 @@ bool is_point_inside_polygon_cpp(const arma::vec& x,
 arma::vec compute_push_cpp(const arma::vec& x,
                            const arma::mat& coords,
                            double lambda);
-                           
+
 // Vectorized version: compute push for multiple positions
 arma::mat compute_push_matrix_cpp(const arma::mat& X,
                                    const arma::mat& coords,

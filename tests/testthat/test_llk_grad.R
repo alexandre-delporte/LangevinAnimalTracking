@@ -19,14 +19,14 @@ test_that("Gradient of one-step log-likelihood w.r.t. movement parameters
                                  polygon,lambda,U0,N, dt,scheme="Lie-Trotter",
                                  split_around_fixed_point=FALSE,
                                  seed=2025)
-  
+
   for (i in 2:nrow(data)) {
     U_prev <- as.numeric(data[i-1,c("X1","X2","V1","V2")])
     U_next <- as.numeric(data[i,c("X1","X2","V1","V2")])
     X_prev<-U_prev[1:2]
     X_next<-U_next[1:2]
     V_next<-U_next[3:4]
-    
+
     push <- compute_push(X_prev,polygon,lambda)
     push_next<-compute_push(X_next,polygon,lambda)
     potential_grad <- mix_gaussian_grad_cpp(X_prev,x_star,params,exclude=integer(0))
@@ -191,19 +191,31 @@ test_that("Gradient of one-step log-likelihood w.r.t. potential parameters
                    tolerance = 1e-5, scale = 1)
     }
 
-    B_entries <- list(c(1,1), c(1,2), c(2,2))
-    B_names   <- c("B11", "B12", "B22")
+    # b=1 -> logL11=(1,1), b=2 -> L21=(2,1), b=3 -> logL22=(2,2)
+    # Diagonal entries (b=1,3) are on the log scale: perturb log(L_ii) by eps.
+    L_names  <- c("logL11", "L21", "logL22")
+    is_log   <- c(TRUE, FALSE, TRUE)
+    row_idx  <- c(1, 2, 2)
+    col_idx  <- c(1, 1, 2)
 
     for (k in 1:J) {
-      for (b in 1:3) {
-        l <- B_entries[[b]][1]; m <- B_entries[[b]][2]
-        pp_fwd <- potential_params; pp_bwd <- potential_params
-        pp_fwd$B[[k]][l, m] <- potential_params$B[[k]][l, m] + eps
-        pp_fwd$B[[k]][m, l] <- potential_params$B[[k]][m, l] + eps
-        pp_bwd$B[[k]][l, m] <- potential_params$B[[k]][l, m] - eps
-        pp_bwd$B[[k]][m, l] <- potential_params$B[[k]][m, l] - eps
+      Lk <- t(chol(potential_params$B[[k]]))
 
-        param_name <- paste0(B_names[b], "_", k)
+      for (b in 1:3) {
+        ri <- row_idx[b]; ci <- col_idx[b]
+        Lk_fwd <- Lk; Lk_bwd <- Lk
+        if (is_log[b]) {
+          Lk_fwd[ri, ci] <- exp(log(Lk[ri, ci]) + eps)
+          Lk_bwd[ri, ci] <- exp(log(Lk[ri, ci]) - eps)
+        } else {
+          Lk_fwd[ri, ci] <- Lk[ri, ci] + eps
+          Lk_bwd[ri, ci] <- Lk[ri, ci] - eps
+        }
+
+        pp_fwd <- potential_params; pp_fwd$B[[k]] <- Lk_fwd %*% t(Lk_fwd)
+        pp_bwd <- potential_params; pp_bwd$B[[k]] <- Lk_bwd %*% t(Lk_bwd)
+
+        param_name <- paste0(L_names[b], "_", k)
         expect_equal(as.numeric(lt_grad[param_name]),
                      (lt_llk_xi(pp_fwd) - lt_llk_xi(pp_bwd)) / (2 * eps),
                      tolerance = 1e-5, scale = 1)

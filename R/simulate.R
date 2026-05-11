@@ -349,7 +349,7 @@ simulate_2D_trajectory <- function(n_sim,sde_params,
 #' @details The plot helps visualize the relationship between true movement and noisy observations.
 #'
 
-plot_trajectory_in_polygon <- function(data, polygon, 
+plot_trajectory_in_polygon <- function(data, polygon,
                                        true_opacity = 0.2, obs_opacity = 0.2,
                                        potential_opacity = 0.4,
                                        true_size = 0.2, obs_size = 0.1,
@@ -358,7 +358,7 @@ plot_trajectory_in_polygon <- function(data, polygon,
                                        zoom_box = NULL) {
   # zoom_box should be a named list: list(xmin, xmax, ymin, ymax)
   # Example: zoom_box = list(xmin = 0, xmax = 10, ymin = 0, ymax = 10)
-  
+
   # Subsample data
   if ("ID" %in% names(data) & length(unique(data$ID)) > 1) {
     data_sub <- do.call(rbind, lapply(split(data, data$ID), function(df) {
@@ -368,13 +368,13 @@ plot_trajectory_in_polygon <- function(data, polygon,
   } else {
     data_sub <- data[seq(1, nrow(data), by = n_sub), ]
   }
-  
+
   p <- ggplot()
-  
+
   polygon_coords <- as.data.frame(polygon@coords)
-  
+
   p <- p +
-    geom_polygon(data = polygon_coords, aes(x = V1, y = V2), 
+    geom_polygon(data = polygon_coords, aes(x = V1, y = V2),
                  fill = NA, color = "grey40", size = 1) +
     geom_point(data = data_sub, aes(x = X1, y = X2), size = true_size, alpha = true_opacity) +
     geom_path(data = data_sub, aes(x = X1, y = X2), size = true_size, alpha = true_opacity) +

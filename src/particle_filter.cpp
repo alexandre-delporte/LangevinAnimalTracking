@@ -433,14 +433,14 @@ static inline double compute_weight_from_cache(
 //' @export
 // [[Rcpp::export]]
 List particle_filter2D_cpp(
-    const arma::mat& observations,           
-    const List& sde_params,                  
-    const List& potential_params,           
-    const List& error_params,                
-    const std::string& error_dist,           
-    const arma::mat& polygon_coords,         
-    const arma::vec& U0,                     
-    double lambda,                          
+    const arma::mat& observations,
+    const List& sde_params,
+    const List& potential_params,
+    const List& error_params,
+    const std::string& error_dist,
+    const arma::mat& polygon_coords,
+    const arma::vec& U0,
+    double lambda,
     int num_particles,
     const std::string& scheme,              
     bool split_around_fixed_point,

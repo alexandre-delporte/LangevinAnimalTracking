@@ -81,8 +81,8 @@ kalman_filter <- function(data,sde_params,potential_params=NULL,
     X_prev <- U_hat[k - 1, 1:2]
     
     push<-compute_push(X_prev,polygon,lambda)
-    
-    
+
+
     if (split_around_fixed_point) {
       
       #compute mahalanobis distances

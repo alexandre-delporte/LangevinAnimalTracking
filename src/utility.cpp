@@ -264,22 +264,12 @@ List closest_point_on_boundary_cpp(const arma::vec& x,
   }
 }
 
+// Check whether x is inside a single polygon (coords matrix)
 bool is_point_inside_polygon_cpp(const arma::vec& x,
                                  const arma::mat& coords) {
 
-  // Access sp::point.in.polygon
   Function pip("point.in.polygon", Environment::namespace_env("sp"));
-
-  // Call sp::point.in.polygon(x, y, polyx, polyy)
-  IntegerVector status = pip(
-    x(0),
-    x(1),
-    coords.col(0),
-    coords.col(1)
-  );
-
-  // Same logic as R:
-  // status == 1 (inside) or 2 (on edge)
+  IntegerVector status = pip(x(0), x(1), coords.col(0), coords.col(1));
   return (status[0] == 1 || status[0] == 2);
 }
 
@@ -308,20 +298,20 @@ arma::vec compute_push_cpp(const arma::vec& x,
 arma::mat compute_push_matrix_cpp(const arma::mat& X,
                                    const arma::mat& coords,
                                    double lambda) {
-  
+
   int n_particles = X.n_rows;
   arma::mat push_matrix(n_particles, 2);
-  
+
   // If lambda is infinite, return matrix of zeros
   if (!std::isfinite(lambda)) {
     push_matrix.zeros();
     return push_matrix;
   }
-  
+
   // Process each particle
   for (int k = 0; k < n_particles; ++k) {
     arma::vec x = X.row(k).t();  // Extract position as column vector
-    
+
     // Check if inside polygon
     if (is_point_inside_polygon_cpp(x, coords)) {
       push_matrix.row(k).zeros();
@@ -329,13 +319,13 @@ arma::mat compute_push_matrix_cpp(const arma::mat& X,
       // Find closest point on boundary
       List proj = closest_point_on_boundary_cpp(x, coords, false);
       arma::vec p = proj["point"];
-      
+
       // Compute push: (x - p) / lambda
       arma::vec push = (x - p) / lambda;
       push_matrix.row(k) = push.t();
     }
   }
-  
+
   return push_matrix;
 }
 

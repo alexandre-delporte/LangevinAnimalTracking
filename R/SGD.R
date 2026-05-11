@@ -20,13 +20,17 @@
 #'   optimisation (their gradients and updates are zeroed out). Applies to both
 #'   movement parameters (\code{tau}, \code{nu}, \code{omega}) and, when
 #'   \code{estimate_potential_params = TRUE}, potential parameters
-#'   (\code{alpha_1}, \code{B11_1}, \code{B12_1}, \code{B22_1}, ...).
+#'   (\code{alpha_1}, \code{logL11_1}, \code{L21_1}, \code{logL22_1}, ...) where
+#'   \code{logL11_k = log(L_k[1,1])} and \code{logL22_k = log(L_k[2,2])} are the
+#'   log-diagonal entries of the lower Cholesky factor of \eqn{B_k}.
 #'   Default \code{NULL} means all active parameters are estimated.
 #' @param estimate_potential_params Logical. If \code{TRUE}, the potential
-#'   parameters (\eqn{\alpha_k} and entries of \eqn{B_k}) are jointly estimated
-#'   alongside the movement parameters. The centres \eqn{x_k^*} are always
-#'   fixed. Individual potential parameters can be held fixed via
-#'   \code{fixpar}. Default \code{FALSE}.
+#'   parameters (\eqn{\alpha_k} and the log-diagonal Cholesky parametrisation of
+#'   \eqn{B_k}) are jointly estimated alongside the movement parameters.
+#'   Diagonal entries are stored as \code{logL11_k = log(L_k[1,1])} and
+#'   \code{logL22_k = log(L_k[2,2])}, keeping \eqn{B_k} positive definite.
+#'   The centres \eqn{x_k^*} are always fixed. Individual parameters can be held
+#'   fixed via \code{fixpar}. Default \code{FALSE}.
 #' @param SGD_iter A positive integer giving the total number of SGD
 #'   iterations to run (across all three phases).
 #' @param potential_params A named list of parameters for the mixture of
@@ -127,10 +131,13 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
   if (estimate_potential_params) {
     J <- length(potential_params$alpha)
     xi_names <- c(paste0("alpha_", 1:J),
-                  unlist(lapply(1:J, function(j) paste0(c("B11","B12","B22"), "_", j))))
+                  unlist(lapply(1:J, function(j) paste0(c("logL11","L21","logL22"), "_", j))))
     param_names <- c(param_names, xi_names)
     xi_init <- c(potential_params$alpha,
-                 unlist(lapply(potential_params$B, function(Bk) c(Bk[1,1], Bk[1,2], Bk[2,2]))))
+                 unlist(lapply(potential_params$B, function(Bk) {
+                   Lk <- t(chol(Bk))
+                   c(log(Lk[1, 1]), Lk[2, 1], log(Lk[2, 2]))
+                 })))
     theta_init <- c(unlist(sde_params), xi_init)
   } else {
     J <- 0
@@ -166,8 +173,9 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
     if (estimate_potential_params) {
       alpha_k <- theta[k, paste0("alpha_", 1:J)]
       B_k <- lapply(1:J, function(j) {
-        b <- theta[k, paste0(c("B11", "B12", "B22"), "_", j)]
-        matrix(c(b[1], b[2], b[2], b[3]), 2, 2)
+        l  <- theta[k, paste0(c("logL11", "L21", "logL22"), "_", j)]
+        Lj <- matrix(c(exp(l[1]), l[2], 0, exp(l[3])), 2, 2)
+        Lj %*% t(Lj)
       })
       potential_params_k <- list(alpha = alpha_k, B = B_k, x_star = x_star)
     } else {
@@ -301,7 +309,8 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
       }
     }
     
-    # Save the trajectory from this iteration if we are in the last n_smooth_samples iterations
+    # Save the trajectory from this iteration if we are in the last
+    # n_smooth_samples iterations
     if (n_smooth_samples > 0 && k > SGD_iter - n_smooth_samples) {
       smooth_samples <- c(smooth_samples, list(z))
     }

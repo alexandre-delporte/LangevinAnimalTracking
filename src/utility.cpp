@@ -264,13 +264,26 @@ List closest_point_on_boundary_cpp(const arma::vec& x,
   }
 }
 
-// Check whether x is inside a single polygon (coords matrix)
+// Check whether x is inside a single polygon (coords matrix) using the
+// ray casting algorithm.
 bool is_point_inside_polygon_cpp(const arma::vec& x,
                                  const arma::mat& coords) {
 
-  Function pip("point.in.polygon", Environment::namespace_env("sp"));
-  IntegerVector status = pip(x(0), x(1), coords.col(0), coords.col(1));
-  return (status[0] == 1 || status[0] == 2);
+  const double px = x(0), py = x(1);
+  if (!std::isfinite(px) || !std::isfinite(py)) return false;
+
+  const arma::uword n = coords.n_rows;
+  if (n < 3) return false;
+
+  bool inside = false;
+  for (arma::uword i = 0, j = n - 1; i < n; j = i++) {
+    const double xi = coords(i, 0), yi = coords(i, 1);
+    const double xj = coords(j, 0), yj = coords(j, 1);
+    if (((yi > py) != (yj > py)) &&
+        (px < (xj - xi) * (py - yi) / (yj - yi) + xi))
+      inside = !inside;
+  }
+  return inside;
 }
 
 // [[Rcpp::export]]

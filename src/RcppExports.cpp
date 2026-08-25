@@ -52,6 +52,32 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// conditional_particle_filter_cpp
+List conditional_particle_filter_cpp(const arma::mat& observations, const List& sde_params, const List& potential_params, const List& error_params, const std::string& error_dist, const arma::mat& polygon_coords, const arma::vec& U0, double lambda, int num_particles, const std::string& scheme, bool split_around_fixed_point, double proposal_weight, const arma::mat& reference_trajectory, int n_sweeps, double ESS_threshold, Nullable<List> obs_error_params);
+RcppExport SEXP _LangevinAnimalTracking_conditional_particle_filter_cpp(SEXP observationsSEXP, SEXP sde_paramsSEXP, SEXP potential_paramsSEXP, SEXP error_paramsSEXP, SEXP error_distSEXP, SEXP polygon_coordsSEXP, SEXP U0SEXP, SEXP lambdaSEXP, SEXP num_particlesSEXP, SEXP schemeSEXP, SEXP split_around_fixed_pointSEXP, SEXP proposal_weightSEXP, SEXP reference_trajectorySEXP, SEXP n_sweepsSEXP, SEXP ESS_thresholdSEXP, SEXP obs_error_paramsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type observations(observationsSEXP);
+    Rcpp::traits::input_parameter< const List& >::type sde_params(sde_paramsSEXP);
+    Rcpp::traits::input_parameter< const List& >::type potential_params(potential_paramsSEXP);
+    Rcpp::traits::input_parameter< const List& >::type error_params(error_paramsSEXP);
+    Rcpp::traits::input_parameter< const std::string& >::type error_dist(error_distSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type polygon_coords(polygon_coordsSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type U0(U0SEXP);
+    Rcpp::traits::input_parameter< double >::type lambda(lambdaSEXP);
+    Rcpp::traits::input_parameter< int >::type num_particles(num_particlesSEXP);
+    Rcpp::traits::input_parameter< const std::string& >::type scheme(schemeSEXP);
+    Rcpp::traits::input_parameter< bool >::type split_around_fixed_point(split_around_fixed_pointSEXP);
+    Rcpp::traits::input_parameter< double >::type proposal_weight(proposal_weightSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type reference_trajectory(reference_trajectorySEXP);
+    Rcpp::traits::input_parameter< int >::type n_sweeps(n_sweepsSEXP);
+    Rcpp::traits::input_parameter< double >::type ESS_threshold(ESS_thresholdSEXP);
+    Rcpp::traits::input_parameter< Nullable<List> >::type obs_error_params(obs_error_paramsSEXP);
+    rcpp_result_gen = Rcpp::wrap(conditional_particle_filter_cpp(observations, sde_params, potential_params, error_params, error_dist, polygon_coords, U0, lambda, num_particles, scheme, split_around_fixed_point, proposal_weight, reference_trajectory, n_sweeps, ESS_threshold, obs_error_params));
+    return rcpp_result_gen;
+END_RCPP
+}
 // OU_cov_exact_cpp
 arma::mat OU_cov_exact_cpp(const arma::mat& A, const arma::mat& Gamma, double h, const arma::mat& expAh);
 RcppExport SEXP _LangevinAnimalTracking_OU_cov_exact_cpp(SEXP ASEXP, SEXP GammaSEXP, SEXP hSEXP, SEXP expAhSEXP) {
@@ -288,6 +314,7 @@ END_RCPP
 static const R_CallMethodDef CallEntries[] = {
     {"_LangevinAnimalTracking_solve_ODE_cpp", (DL_FUNC) &_LangevinAnimalTracking_solve_ODE_cpp, 5},
     {"_LangevinAnimalTracking_particle_filter2D_cpp", (DL_FUNC) &_LangevinAnimalTracking_particle_filter2D_cpp, 16},
+    {"_LangevinAnimalTracking_conditional_particle_filter_cpp", (DL_FUNC) &_LangevinAnimalTracking_conditional_particle_filter_cpp, 16},
     {"_LangevinAnimalTracking_OU_cov_exact_cpp", (DL_FUNC) &_LangevinAnimalTracking_OU_cov_exact_cpp, 4},
     {"_LangevinAnimalTracking_OU_cov_exact_cpp_full", (DL_FUNC) &_LangevinAnimalTracking_OU_cov_exact_cpp_full, 3},
     {"_LangevinAnimalTracking_RACVM_cov_cpp", (DL_FUNC) &_LangevinAnimalTracking_RACVM_cov_cpp, 4},

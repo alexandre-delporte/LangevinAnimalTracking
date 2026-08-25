@@ -11,6 +11,7 @@ SGD_Fisher(
   fixpar = NULL,
   SGD_iter,
   potential_params = NULL,
+  estimate_potential_params = FALSE,
   error_dist = NULL,
   error_params = NULL,
   scheme = "Lie-Trotter",
@@ -18,13 +19,19 @@ SGD_Fisher(
   U0,
   lambda,
   num_particles,
+  num_particles_min = num_particles,
+  num_particles_decay_iter = SGD_iter,
   split_around_fixed_point = FALSE,
   verbose = FALSE,
   gamma0 = 1e-04,
   K_preheat = 1000,
   alpha = 2/3,
   C_heating = 1/1000,
-  n_smooth_samples = 0
+  n_smooth_samples = 0,
+  obs_error_params = NULL,
+  smoothing_method = "FFBS",
+  n_sweeps_cpf = 1,
+  init_trajectory = NULL
 )
 }
 \arguments{
@@ -37,8 +44,13 @@ scale), and \code{omega} (angular velocity). Names are used to label
 columns in the output matrix.}
 
 \item{fixpar}{A character vector of parameter names to hold fixed during
-optimisation (their gradients and updates are zeroed out). Default
-\code{NULL} means all parameters are estimated.}
+optimisation (their gradients and updates are zeroed out). Applies to both
+movement parameters (\code{tau}, \code{nu}, \code{omega}) and, when
+\code{estimate_potential_params = TRUE}, potential parameters
+(\code{alpha_1}, \code{logL11_1}, \code{L21_1}, \code{logL22_1}, ...) where
+\code{logL11_k = log(L_k[1,1])} and \code{logL22_k = log(L_k[2,2])} are the
+log-diagonal entries of the lower Cholesky factor of \eqn{B_k}.
+Default \code{NULL} means all active parameters are estimated.}
 
 \item{SGD_iter}{A positive integer giving the total number of SGD
 iterations to run (across all three phases).}
@@ -51,6 +63,14 @@ Gaussian potential \eqn{H}, with elements:
   \item{\code{x_star}}{Matrix of attraction centres (one row per
     component).}
 }}
+
+\item{estimate_potential_params}{Logical. If \code{TRUE}, the potential
+parameters (\eqn{\alpha_k} and the log-diagonal Cholesky parametrisation of
+\eqn{B_k}) are jointly estimated alongside the movement parameters.
+Diagonal entries are stored as \code{logL11_k = log(L_k[1,1])} and
+\code{logL22_k = log(L_k[2,2])}, keeping \eqn{B_k} positive definite.
+The centres \eqn{x_k^*} are always fixed. Individual parameters can be held
+fixed via \code{fixpar}. Default \code{FALSE}.}
 
 \item{error_dist}{A character string specifying the observation error
 distribution (e.g. \code{"gaussian"}, \code{"argos"}).}
@@ -72,7 +92,22 @@ used to approximate the SDE transition density. Either
 \eqn{\lambda} used in the reflected Langevin push.}
 
 \item{num_particles}{A positive integer giving the number of particles
-used in the particle filter.}
+used in the particle filter at the start of SGD (iteration 1). Used for
+both the forward particle filter/FFBS and the conditional particle
+filter (when \code{smoothing_method = "CPF"}).}
+
+\item{num_particles_min}{A positive integer giving the floor of the
+particle count, reached at iteration \code{num_particles_decay_iter} and
+held constant afterwards. Number of particles decreases linearly from
+\code{num_particles} to \code{num_particles_min} across iterations. For
+CPF, this floor can be as low as 5-10 since the conditional particle
+filter with ancestor sampling mixes well with very few particles once
+warm-started. Default is \code{num_particles} (i.e. no decay).}
+
+\item{num_particles_decay_iter}{A positive integer giving the iteration at
+which the linear decay of the particle count reaches
+\code{num_particles_min}. Default \code{SGD_iter} (decay over the whole
+run).}
 
 \item{split_around_fixed_point}{Logical. If \code{TRUE}, the potential is
 split around its fixed point. Currently not implemented and will throw an
@@ -106,6 +141,34 @@ the heating phase. The heating phase ends when the filtered norm stops
 smoothed trajectories from the last \code{n_smooth_samples} iterations
 are saved and returned. These can be used to reconstruct plausible latent
 tracks consistent with the observations. Default \code{0}.}
+
+\item{obs_error_params}{Optional list of length \code{N} of per-observation
+error parameter lists, as produced by \code{\link{make_argos_obs_params}}.
+Passed through to \code{particle_filter2D_cpp} and
+\code{forward_filtering_backward_sampling} at every SGD iteration.
+Only used when \code{error_dist = "argos"}. Default \code{NULL}.}
+
+\item{smoothing_method}{A character string, either \code{"FFBS"} (default)
+or \code{"CPF"}. \code{"FFBS"} draws a fresh smoothed trajectory at every
+SGD iteration via forward-filtering backward-sampling (\code{\link{forward_filtering_backward_sampling}}).
+\code{"CPF"} instead uses the conditional particle filter with ancestor
+sampling (\code{\link{conditional_particle_filter_cpp}}, Svensson et al.
+2015) as a persistent MCMC chain over trajectories: the trajectory
+sampled at iteration \code{k} is used as the conditioning
+\code{reference_trajectory} at iteration \code{k+1} (Markovian stochastic
+approximation), which typically mixes well with far fewer particles than
+FFBS.}
+
+\item{n_sweeps_cpf}{A positive integer giving the number of CPF-AS sweeps
+run per SGD iteration when \code{smoothing_method = "CPF"}. Default
+\code{1} (one sweep per iteration, relying on warm-starting across SGD
+iterations for mixing).}
+
+\item{init_trajectory}{An optional \code{n x 4} matrix giving the initial
+conditioning trajectory for the CPF-AS chain (columns \code{X1, X2, V1,
+V2}). Only used when \code{smoothing_method = "CPF"}. If \code{NULL}
+(default), an initial trajectory is drawn via a single FFBS sample before
+the first SGD iteration.}
 }
 \value{
 A named list with the following elements:

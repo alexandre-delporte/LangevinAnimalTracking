@@ -2,22 +2,22 @@
 % Please edit documentation in R/utility.R
 \name{closest_point_on_boundary}
 \alias{closest_point_on_boundary}
-\title{Function to project a point on the closest point on the boundary of the polygon}
+\title{Find the closest point on the boundary of a single polygon}
 \usage{
 closest_point_on_boundary(x, polygon, grad = TRUE)
 }
 \arguments{
 \item{x}{Numeric vector of length 2: coordinates of the point}
 
-\item{polygon}{SpatialPolygon object representing the polygon}
+\item{polygon}{Polygon object (with @coords slot)}
 
 \item{grad}{logical. If TRUE, also compute the gradient of the projection}
 }
 \value{
 A list with elements:
-- point: Numeric vector of length 2, coordinates of the closest point on the boundary
-- gradient: 2x2 matrix representing the gradient of the projection (if grad=TRUE)
+ - point: Numeric vector of length 2, coordinates of the closest boundary point
+ - gradient: 2x2 Jacobian of the projection (or NULL at vertices)
 }
 \description{
-Function to project a point on the closest point on the boundary of the polygon
+Find the closest point on the boundary of a single polygon
 }

@@ -585,7 +585,7 @@ List particle_filter2D_cpp(
     double delta = deltas(j);
     arma::vec y = observations.row(j + 1).subvec(1, 2).t();
     
-    // --- Resolve error parameters for this time step ---
+    // --- Get error parameters for this time step ---
     // Use per-observation params if supplied, otherwise fall back to global precomputed values
     double step_sigma_obs   = sigma_obs;
     double step_scale       = scale;
@@ -631,7 +631,7 @@ List particle_filter2D_cpp(
     
     global_timer.record("compute_push");
     
-    // Choose centers for all particles if splitting
+    // Choose centers for all particles if splitting around a fixed point
     arma::ivec ind_fixed_point_vec;
     if (split_around_fixed_point) {
       ind_fixed_point_vec = choose_center_matrix_cpp(
@@ -646,7 +646,7 @@ List particle_filter2D_cpp(
     // Cache intermediate values for each particle to avoid recomputation
     std::vector<ParticleIntermediate> particle_cache(num_particles);
     
-    // --- PREDICTION STEP ---
+ 
     // Propagate each particle and cache intermediate computations
     for (int k = 0; k < num_particles; ++k) {
       
@@ -676,28 +676,35 @@ List particle_filter2D_cpp(
    // --- CORRECTION STEP ---
     if (verbose) Rcout << "  Correction step...\n";
     
-    // Compute weights using cached intermediate values
+    // Compute weights using cached intermediate values.
+    // weights(k, j+1) = weights(k, j) * incremental(k): the entering weight
+    // weights(k, j) is already normalized (sums to 1), and is only uniform
+    // (1/num_particles) when step j resampled. When resampling was skipped
+    // (adaptive ESS_threshold < 1), weights(k, j) carries the actual
+    // non-uniform prior weight, which must be propagated forward 
     for (int k = 0; k < num_particles; ++k) {
-      
+
       arma::vec U_pred = particles.slice(j + 1).row(k).t();
-      
+
       // Use cached values to avoid recomputation of ODE, SDE, Cholesky!
-      weights(k, j + 1) = compute_weight_from_cache(
+      double incremental = compute_weight_from_cache(
         U_pred, y, M,
         error_dist, scheme,
         proposal_weight, step_sigma_obs, step_scale, step_df,
         step_invS1, step_invS2, step_log_p, step_log_1mp, step_a, step_rho,
-        particle_cache[k]);  // INPUT: use cached values
+        particle_cache[k]); 
+
+      weights(k, j + 1) = weights(k, j) * incremental;
      }
-    
+
     global_timer.record("compute_weights");
-    
+
     // Store total weight
     total_weights(j + 1) = arma::sum(weights.col(j + 1));
-    
-    // Update log-likelihood
-    loglik += std::log(total_weights(j + 1)) - std::log(num_particles);
-    loglik_vector(j) = std::log(total_weights(j + 1)) - std::log(num_particles);
+
+    // Update log-likelihood.
+    loglik += std::log(total_weights(j + 1));
+    loglik_vector(j) = std::log(total_weights(j + 1));
     
     // Normalize weights
     double weight_sum = total_weights(j + 1);
@@ -786,8 +793,397 @@ List particle_filter2D_cpp(
   if (split_around_fixed_point) {
     result["ind_fixed_point"] = ind_fixed_point_mat;
   }
-  
+
   return result;
+}
+
+
+// ==================== Conditional Particle Filter with Ancestor Sampling (CPF-AS) ====================
+// Implements the CPF-AS kernel (Svensson et al. 2015; Lindsten, Jordan & Schon 2014) as an
+// MCMC (Particle Gibbs) alternative to forward-filtering backward-sampling for drawing
+// trajectories from the smoothing distribution.
+
+// Log transition density p(U_target | U_prev) under the numerical splitting scheme.
+// Mirrors the backward-weight computation used in forward_filtering_backward_sampling() (R):
+// for Strang, the final gradient term always uses the naive (non-fixed-point) mixture
+// gradient, matching that function's documented limitation.
+static inline double transition_log_density(
+    const arma::vec& U_prev,
+    const arma::vec& U_target,
+    double delta,
+    const arma::vec& push,
+    const List& potential_params,
+    double tau,
+    double nu,
+    double omega,
+    double lambda,
+    const std::string& scheme,
+    const arma::mat& polygon_coords,
+    int ind_fixed_point,
+    bool use_precomputed_LQ,
+    const arma::mat& L_precomputed,
+    const arma::mat& Q_precomputed
+) {
+  Nullable<int> ind_fp_arg = (ind_fixed_point > 0) ? Nullable<int>(wrap(ind_fixed_point)) : Nullable<int>(R_NilValue);
+
+  if (scheme == "Lie-Trotter") {
+    arma::vec U_hat = solve_ODE_cpp(U_prev, delta, push, potential_params, ind_fp_arg);
+
+    List OU_solution = use_precomputed_LQ
+      ? solve_SDE_cpp(U_hat, delta, tau, nu, omega, potential_params, ind_fp_arg, wrap(L_precomputed), wrap(Q_precomputed))
+      : solve_SDE_cpp(U_hat, delta, tau, nu, omega, potential_params, ind_fp_arg, R_NilValue, R_NilValue);
+
+    arma::mat Q = as<arma::mat>(OU_solution["Q"]);
+    arma::vec mean = as<arma::vec>(OU_solution["mean"]);
+
+    return log_dmvnorm_chol_cpp(U_target, mean, chol_cpp(Q));
+
+  } else { // Strang
+    arma::mat x_star = potential_params["x_star"];
+
+    arma::vec U_hat = solve_ODE_cpp(U_prev, delta / 2.0, push, potential_params, ind_fp_arg);
+
+    List OU_solution = use_precomputed_LQ
+      ? solve_SDE_cpp(U_hat, delta, tau, nu, omega, potential_params, ind_fp_arg, wrap(L_precomputed), wrap(Q_precomputed))
+      : solve_SDE_cpp(U_hat, delta, tau, nu, omega, potential_params, ind_fp_arg, R_NilValue, R_NilValue);
+
+    arma::mat Q = as<arma::mat>(OU_solution["Q"]);
+    arma::vec mean = as<arma::vec>(OU_solution["mean"]);
+
+    arma::vec X_next = U_target.subvec(0, 1);
+    arma::vec V_next = U_target.subvec(2, 3);
+
+    arma::vec push_next = compute_push_cpp(X_next, polygon_coords, lambda);
+    arma::vec grad_next = mix_gaussian_grad_cpp(X_next, x_star, potential_params, IntegerVector());
+
+    arma::vec V_tilde = V_next + (delta / 2.0) * (push_next + grad_next);
+    arma::vec U_tilde_next = arma::join_vert(X_next, V_tilde);
+
+    return log_dmvnorm_chol_cpp(U_tilde_next, mean, chol_cpp(Q));
+  }
+}
+
+// Run a single CPF-AS sweep conditional on a reference trajectory, returning a new sampled trajectory.
+static arma::mat run_cpf_as_sweep(
+    const arma::mat& observations,
+    const List& sde_params,
+    const List& potential_params,
+    const List& error_params,
+    const std::string& error_dist,
+    const arma::mat& polygon_coords,
+    const arma::vec& U0,
+    double lambda,
+    int K,
+    const std::string& scheme,
+    bool split_around_fixed_point,
+    double proposal_weight,
+    double ESS_threshold,
+    const arma::mat& ref_traj,
+    bool has_obs_error_params,
+    const List& obs_ep_list,
+    arma::vec& ess_history_out,
+    LogicalVector& resampled_at_out
+) {
+  int N = observations.n_rows;
+  int num_states = 4;
+
+  double tau = as<double>(sde_params["tau"]);
+  double nu = as<double>(sde_params["nu"]);
+  double omega = as<double>(sde_params["omega"]);
+
+  arma::mat I2 = arma::eye<arma::mat>(2, 2);
+  arma::mat M = arma::join_horiz(I2, arma::zeros<arma::mat>(2, 2));
+
+  arma::mat x_star = potential_params["x_star"];
+
+  arma::vec times = observations.col(0);
+  arma::vec deltas = arma::diff(times);
+
+  bool use_precomputed_LQ = false;
+  arma::mat L_precomputed, Q_precomputed;
+  if (arma::max(deltas) - arma::min(deltas) < 1e-6 && !split_around_fixed_point) {
+    use_precomputed_LQ = true;
+    double delta0 = deltas(0);
+    L_precomputed = RACVM_link_cpp(tau, omega, delta0);
+    Q_precomputed = RACVM_cov_cpp(tau, nu, omega, delta0);
+  }
+
+  double sigma_obs = 0.0, scale = 0.0, df = 0.0, rho = 0.0, a = 0.0, p_argos = 0.0;
+  arma::mat invS_argos1, invS_argos2;
+  double log_p_argos = 0.0, log_1mp_argos = 0.0;
+
+  if (error_dist == "normal") {
+    sigma_obs = as<double>(error_params["sigma_obs"]);
+  } else if (error_dist == "scaled_t") {
+    scale = as<double>(error_params["scale"]);
+    df = as<double>(error_params["df"]);
+  } else if (error_dist == "argos") {
+    df = as<double>(error_params["df"]);
+    sigma_obs = as<double>(error_params["sigma_obs"]);
+    rho = as<double>(error_params["rho"]);
+    a = as<double>(error_params["a"]);
+    p_argos = as<double>(error_params["p"]);
+
+    arma::mat Sigma1 = sigma_obs*sigma_obs * arma::mat{{1, rho*std::sqrt(a)}, {rho*std::sqrt(a), 1}};
+    arma::mat Sigma2 = sigma_obs*sigma_obs * arma::mat{{1, -rho*std::sqrt(a)}, {-rho*std::sqrt(a), 1}};
+    invS_argos1 = arma::inv(df/(df-2.0) * Sigma1);
+    invS_argos2 = arma::inv(df/(df-2.0) * Sigma2);
+    log_p_argos = std::log(p_argos);
+    log_1mp_argos = std::log(1.0 - p_argos);
+  }
+
+  arma::cube particles(K, num_states, N);
+  arma::mat weights(K, N);
+  arma::imat ancestors(K, N - 1);
+
+  arma::mat R0 = arma::diagmat(arma::vec{0.01, 0.01, 0.25, 0.25});
+  arma::mat sqrtR0 = arma::sqrtmat_sympd(R0);
+  for (int k = 0; k < K - 1; ++k) {
+    arma::vec noise = sqrtR0 * arma::randn<arma::vec>(num_states);
+    particles.slice(0).row(k) = (U0 + noise).t();
+  }
+  particles.slice(0).row(K - 1) = ref_traj.row(0);
+  weights.col(0).fill(1.0 / K);
+  ess_history_out(0) = K;
+
+  for (int j = 0; j < N - 1; ++j) {
+
+    double delta = deltas(j);
+    arma::vec y = observations.row(j + 1).subvec(1, 2).t();
+
+    double step_sigma_obs = sigma_obs, step_scale = scale, step_df = df, step_rho = rho, step_a = a;
+    double step_log_p = log_p_argos, step_log_1mp = log_1mp_argos;
+    arma::mat step_invS1 = invS_argos1, step_invS2 = invS_argos2;
+    List step_error_params = error_params;
+
+    if (has_obs_error_params && error_dist == "argos") {
+      step_error_params = as<List>(obs_ep_list[j + 1]);
+      step_df = as<double>(step_error_params["df"]);
+      step_sigma_obs = as<double>(step_error_params["sigma_obs"]);
+      step_rho = as<double>(step_error_params["rho"]);
+      step_a = as<double>(step_error_params["a"]);
+      double step_p = as<double>(step_error_params["p"]);
+      step_log_p = std::log(step_p);
+      step_log_1mp = std::log(1.0 - step_p);
+
+      arma::mat Sigma1 = step_sigma_obs*step_sigma_obs * arma::mat{{1, step_rho*std::sqrt(step_a)}, {step_rho*std::sqrt(step_a), 1}};
+      arma::mat Sigma2 = step_sigma_obs*step_sigma_obs * arma::mat{{1, -step_rho*std::sqrt(step_a)}, {-step_rho*std::sqrt(step_a), 1}};
+      step_invS1 = arma::inv(step_df/(step_df-2.0) * Sigma1);
+      step_invS2 = arma::inv(step_df/(step_df-2.0) * Sigma2);
+    }
+
+    arma::mat X_positions = particles.slice(j).cols(0, 1);
+    arma::mat push_matrix = compute_push_matrix_cpp(X_positions, polygon_coords, lambda);
+
+    arma::ivec ind_fp_vec;
+    if (split_around_fixed_point) {
+      ind_fp_vec = choose_center_matrix_cpp(X_positions, x_star, potential_params);
+    }
+
+    arma::vec w_prev = weights.col(j);
+    arma::vec cw_prev = arma::cumsum(w_prev);
+
+    double ess = 1.0 / arma::sum(arma::square(w_prev));
+    bool do_resample = (ess / K) < ESS_threshold;
+    resampled_at_out(j) = do_resample;
+
+    // --- Resample ancestors for particles 0..K-2 (systematic, adaptive on ESS) ---
+    arma::ivec anc(K);
+    if (do_resample) {
+      double u0 = R::runif(0.0, 1.0 / (K - 1));
+      int idx = 0;
+      for (int k = 0; k < K - 1; ++k) {
+        double u = u0 + k / double(K - 1);
+        while (idx < K - 1 && cw_prev(idx) < u) idx++;
+        anc(k) = idx;
+      }
+    } else {
+      for (int k = 0; k < K - 1; ++k) anc(k) = k;
+    }
+
+    std::vector<ParticleIntermediate> cache(K);
+
+    // --- Propagate particles 0..K-2 via the proposal ---
+    for (int k = 0; k < K - 1; ++k) {
+      int anc_idx = anc(k);
+      arma::vec U_prev = particles.slice(j).row(anc_idx).t();
+      arma::vec push = push_matrix.row(anc_idx).t();
+      int ind_fp = (split_around_fixed_point && ind_fp_vec(anc_idx) > 0) ? ind_fp_vec(anc_idx) : 0;
+
+      arma::vec U_next = propagate_particle_with_cache(
+        U_prev, y, M, delta, push, potential_params,
+        tau, nu, omega, lambda, error_dist, step_error_params, scheme, polygon_coords,
+        ind_fp, use_precomputed_LQ, L_precomputed, Q_precomputed, proposal_weight, cache[k]);
+
+      particles.slice(j + 1).row(k) = U_next.t();
+    }
+
+    // --- Pin particle K-1 to the reference trajectory ---
+    particles.slice(j + 1).row(K - 1) = ref_traj.row(j + 1);
+    arma::vec U_ref_next = ref_traj.row(j + 1).t();
+
+    // --- Ancestor sampling for the reference particle ---
+    arma::vec log_as_weights(K);
+    for (int m = 0; m < K; ++m) {
+      arma::vec U_prev_m = particles.slice(j).row(m).t();
+      arma::vec push_m = push_matrix.row(m).t();
+      int ind_fp_m = (split_around_fixed_point && ind_fp_vec(m) > 0) ? ind_fp_vec(m) : 0;
+
+      double log_trans = transition_log_density(
+        U_prev_m, U_ref_next, delta, push_m, potential_params,
+        tau, nu, omega, lambda, scheme, polygon_coords,
+        ind_fp_m, use_precomputed_LQ, L_precomputed, Q_precomputed);
+
+      log_as_weights(m) = std::log(w_prev(m)) + log_trans;
+    }
+    double mx = log_as_weights.max();
+    arma::vec as_w = arma::exp(log_as_weights - mx);
+    as_w /= arma::sum(as_w);
+    arma::vec cw_as = arma::cumsum(as_w);
+    double u_as = R::runif(0.0, 1.0);
+    int a_ref = 0;
+    while (a_ref < K - 1 && cw_as(a_ref) < u_as) a_ref++;
+    anc(K - 1) = a_ref;
+
+    // Cache needed to compute the reference particle's importance weight
+    {
+      arma::vec U_prev = particles.slice(j).row(a_ref).t();
+      arma::vec push = push_matrix.row(a_ref).t();
+      int ind_fp = (split_around_fixed_point && ind_fp_vec(a_ref) > 0) ? ind_fp_vec(a_ref) : 0;
+      ParticleIntermediate ref_cache;
+      propagate_particle_with_cache(
+        U_prev, y, M, delta, push, potential_params,
+        tau, nu, omega, lambda, error_dist, step_error_params, scheme, polygon_coords,
+        ind_fp, use_precomputed_LQ, L_precomputed, Q_precomputed, proposal_weight, ref_cache);
+      cache[K - 1] = ref_cache;
+    }
+
+    // --- Compute importance weights for all K particles ---
+    // When particles 0..K-2 were not resampled, their previous (non-uniform) weight must
+    // carry forward multiplicatively; when resampled, the incremental factor alone suffices
+    // since the resampling step already incorporated the previous weight into the selection
+    // probability. The reference particle (K-1) is always "resampled" via ancestor sampling,
+    // so its weight is always incremental only.
+    for (int k = 0; k < K; ++k) {
+      arma::vec U_pred = particles.slice(j + 1).row(k).t();
+      double incremental = compute_weight_from_cache(
+        U_pred, y, M, error_dist, scheme, proposal_weight,
+        step_sigma_obs, step_scale, step_df,
+        step_invS1, step_invS2, step_log_p, step_log_1mp, step_a, step_rho,
+        cache[k]);
+      weights(k, j + 1) = (k < K - 1 && !do_resample) ? w_prev(anc(k)) * incremental : incremental;
+    }
+
+    ancestors.col(j) = anc;
+
+    double wsum = arma::sum(weights.col(j + 1));
+    weights.col(j + 1) /= wsum;
+    ess_history_out(j + 1) = 1.0 / arma::sum(arma::square(weights.col(j + 1)));
+  }
+
+  // --- Final draw and genealogy tracing ---
+  arma::vec wN = weights.col(N - 1);
+  arma::vec cwN = arma::cumsum(wN);
+  double u_final = R::runif(0.0, 1.0);
+  int idx = 0;
+  while (idx < K - 1 && cwN(idx) < u_final) idx++;
+
+  arma::mat traj(N, num_states);
+  traj.row(N - 1) = particles.slice(N - 1).row(idx);
+  for (int t = N - 2; t >= 0; --t) {
+    idx = ancestors(idx, t);
+    traj.row(t) = particles.slice(t).row(idx);
+  }
+
+  return traj;
+}
+
+//' Conditional particle filter with ancestor sampling (CPF-AS)
+//'
+//' Implements the CPF-AS kernel (Svensson et al. 2015; Lindsten, Jordan and Schon 2014)
+//' as an MCMC (Particle Gibbs) alternative to forward-filtering backward-sampling for
+//' drawing trajectories from the smoothing distribution. One or more CPF-AS sweeps are
+//' run, each conditioning on the trajectory sampled by the previous sweep (or on
+//' \code{reference_trajectory} for the first sweep), and the final sampled trajectory is
+//' returned. Calling this repeatedly across SGD iterations, each time passing back in the
+//' previously returned trajectory as \code{reference_trajectory}, forms a single persistent
+//' MCMC chain over trajectories (Markovian stochastic approximation).
+//'
+//' @param observations Matrix with dimensions N x 3: time, Y1, Y2
+//' @param sde_params List with elements: tau, nu, omega
+//' @param potential_params List with elements: alpha, B, x_star
+//' @param error_params List of parameters for the measurement error distribution
+//' @param error_dist String specifying error distribution: "normal", "scaled_t", or "argos"
+//' @param polygon_coords Matrix of polygon boundary coordinates (N x 2)
+//' @param U0 Numeric vector of initial state (length 4)
+//' @param lambda Numeric, penalization parameter
+//' @param num_particles Integer, number of particles K (K-1 propagated + 1 reference)
+//' @param scheme String, splitting scheme: "Lie-Trotter" or "Strang"
+//' @param split_around_fixed_point Logical, whether to split around fixed points
+//' @param proposal_weight Numeric between 0 and 1, weight for the Gaussian proposal
+//' @param reference_trajectory Matrix (N x 4) giving the initial conditioning trajectory
+//' @param n_sweeps Integer, number of CPF-AS sweeps to run (default 1)
+//' @param ESS_threshold Numeric between 0 and 1, threshold on effective sample size (as a
+//'   fraction of num_particles) below which particles 0..K-2 are resampled (systematic
+//'   resampling) at a given step. The reference particle's ancestor is always resampled via
+//'   ancestor sampling regardless of this threshold. Use 1 to resample at every step.
+//' @param obs_error_params Optional list of length N of per-observation error_params (ARGOS)
+//'
+//' @return List with elements:
+//'   \itemize{
+//'     \item trajectory: matrix (N x 4) sampled from the (approximate) smoothing distribution
+//'     \item ess_history: vector of ESS at each time step of the last sweep
+//'     \item resampled_at: logical vector indicating steps where particles 0..K-2 were
+//'       resampled in the last sweep
+//'   }
+//' @export
+// [[Rcpp::export]]
+List conditional_particle_filter_cpp(
+    const arma::mat& observations,
+    const List& sde_params,
+    const List& potential_params,
+    const List& error_params,
+    const std::string& error_dist,
+    const arma::mat& polygon_coords,
+    const arma::vec& U0,
+    double lambda,
+    int num_particles,
+    const std::string& scheme,
+    bool split_around_fixed_point,
+    double proposal_weight,
+    const arma::mat& reference_trajectory,
+    int n_sweeps,
+    double ESS_threshold,
+    Nullable<List> obs_error_params
+) {
+  int N = observations.n_rows;
+
+  bool has_obs_error_params = obs_error_params.isNotNull();
+  List obs_ep_list;
+  if (has_obs_error_params) {
+    obs_ep_list = as<List>(obs_error_params);
+    if ((int)obs_ep_list.size() != N) {
+      Rcpp::stop("obs_error_params must have length equal to the number of observations (%d)", N);
+    }
+  }
+
+  arma::mat ref = reference_trajectory;
+  arma::vec ess_history(N);
+  LogicalVector resampled_at(N - 1);
+
+  for (int s = 0; s < n_sweeps; ++s) {
+    ref = run_cpf_as_sweep(
+      observations, sde_params, potential_params, error_params, error_dist,
+      polygon_coords, U0, lambda, num_particles, scheme, split_around_fixed_point,
+      proposal_weight, ESS_threshold, ref, has_obs_error_params, obs_ep_list,
+      ess_history, resampled_at);
+  }
+
+  return List::create(
+    Named("trajectory") = ref,
+    Named("ess_history") = ess_history,
+    Named("resampled_at") = resampled_at
+  );
 }
 
 

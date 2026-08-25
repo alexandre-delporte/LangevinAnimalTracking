@@ -17,6 +17,8 @@ llk_gradient_one_step(
   scheme = "Lie-Trotter",
   push_next = NULL,
   potential_grad_next = NULL,
+  potential_params = NULL,
+  x_star = NULL,
   verbose = FALSE
 )
 }
@@ -41,13 +43,22 @@ llk_gradient_one_step(
 
 \item{push_next}{Push vector at next time step (length 2) - REQUIRED for Strang scheme}
 
-\item{potential_grad_next}{Gradient of potential at next time step (length 2) 
+\item{potential_grad_next}{Gradient of potential at next time step (length 2)
 - REQUIRED for Strang scheme}
+
+\item{potential_params}{Optional list with elements alpha, B for the Gaussian mixture
+potential. When provided, gradients w.r.t. potential parameters are also returned.}
+
+\item{x_star}{Optional matrix of attraction centres (one row per component).
+Required when potential_params is provided.}
 
 \item{verbose}{If TRUE, print detailed computation steps}
 }
 \value{
-Numeric vector of length 3 with gradients w.r.t. tau, nu, omega
+Named numeric vector with gradients w.r.t. tau, nu, omega, and optionally
+  alpha_1,...,alpha_J, logL11_1, L21_1, logL22_1, ..., logL11_J, L21_J, logL22_J
+  where logL11_k = log(L_k[1,1]) and logL22_k = log(L_k[2,2]) are the
+  log-diagonal entries of the lower Cholesky factor of B_k
 }
 \description{
 Compute gradient of log-likelihood for one time step

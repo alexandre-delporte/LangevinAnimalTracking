@@ -28,7 +28,8 @@ extended_kalman_filter(
 \item{potential_params}{Parameters for a mixture of gaussian potential. Only necessary
 if split_around_fixed_point is TRUE.}
 
-\item{sigma_obs}{Standard deviation of the (isotropic) measurement error}
+\item{sigma_obs}{Array of covariance matrices for the 
+measurement error for each observation}
 
 \item{polygon}{polygon defining the ecological domain of interest}
 

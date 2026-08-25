@@ -20,7 +20,8 @@ plot_trajectory_in_polygon(
 )
 }
 \arguments{
-\item{data}{df from `simulate_2D_trajectory()`. If multiple IDs, individual trajectories are on individual facets}
+\item{data}{df from `simulate_2D_trajectory()`. If multiple IDs, 
+individual trajectories are on individual facets}
 
 \item{polygon}{SpatialPolygons object defining the boundary (from `sp` package)}
 

@@ -56,6 +56,49 @@ particle_filter2D_cpp <- function(observations, sde_params, potential_params, er
     .Call(`_LangevinAnimalTracking_particle_filter2D_cpp`, observations, sde_params, potential_params, error_params, error_dist, polygon_coords, U0, lambda, num_particles, scheme, split_around_fixed_point, ESS_threshold, proposal_weight, verbose, print_timing, obs_error_params)
 }
 
+#' Conditional particle filter with ancestor sampling (CPF-AS)
+#'
+#' Implements the CPF-AS kernel (Svensson et al. 2015; Lindsten, Jordan and Schon 2014)
+#' as an MCMC (Particle Gibbs) alternative to forward-filtering backward-sampling for
+#' drawing trajectories from the smoothing distribution. One or more CPF-AS sweeps are
+#' run, each conditioning on the trajectory sampled by the previous sweep (or on
+#' \code{reference_trajectory} for the first sweep), and the final sampled trajectory is
+#' returned. Calling this repeatedly across SGD iterations, each time passing back in the
+#' previously returned trajectory as \code{reference_trajectory}, forms a single persistent
+#' MCMC chain over trajectories (Markovian stochastic approximation).
+#'
+#' @param observations Matrix with dimensions N x 3: time, Y1, Y2
+#' @param sde_params List with elements: tau, nu, omega
+#' @param potential_params List with elements: alpha, B, x_star
+#' @param error_params List of parameters for the measurement error distribution
+#' @param error_dist String specifying error distribution: "normal", "scaled_t", or "argos"
+#' @param polygon_coords Matrix of polygon boundary coordinates (N x 2)
+#' @param U0 Numeric vector of initial state (length 4)
+#' @param lambda Numeric, penalization parameter
+#' @param num_particles Integer, number of particles K (K-1 propagated + 1 reference)
+#' @param scheme String, splitting scheme: "Lie-Trotter" or "Strang"
+#' @param split_around_fixed_point Logical, whether to split around fixed points
+#' @param proposal_weight Numeric between 0 and 1, weight for the Gaussian proposal
+#' @param reference_trajectory Matrix (N x 4) giving the initial conditioning trajectory
+#' @param n_sweeps Integer, number of CPF-AS sweeps to run (default 1)
+#' @param ESS_threshold Numeric between 0 and 1, threshold on effective sample size (as a
+#'   fraction of num_particles) below which particles 0..K-2 are resampled (systematic
+#'   resampling) at a given step. The reference particle's ancestor is always resampled via
+#'   ancestor sampling regardless of this threshold. Use 1 to resample at every step.
+#' @param obs_error_params Optional list of length N of per-observation error_params (ARGOS)
+#'
+#' @return List with elements:
+#'   \itemize{
+#'     \item trajectory: matrix (N x 4) sampled from the (approximate) smoothing distribution
+#'     \item ess_history: vector of ESS at each time step of the last sweep
+#'     \item resampled_at: logical vector indicating steps where particles 0..K-2 were
+#'       resampled in the last sweep
+#'   }
+#' @export
+conditional_particle_filter_cpp <- function(observations, sde_params, potential_params, error_params, error_dist, polygon_coords, U0, lambda, num_particles, scheme, split_around_fixed_point, proposal_weight, reference_trajectory, n_sweeps, ESS_threshold, obs_error_params) {
+    .Call(`_LangevinAnimalTracking_conditional_particle_filter_cpp`, observations, sde_params, potential_params, error_params, error_dist, polygon_coords, U0, lambda, num_particles, scheme, split_around_fixed_point, proposal_weight, reference_trajectory, n_sweeps, ESS_threshold, obs_error_params)
+}
+
 #' Compute exact covariance matrix for Ornstein-Uhlenbeck process (C++ version)
 #' 
 #' @param A Drift matrix (d x d)

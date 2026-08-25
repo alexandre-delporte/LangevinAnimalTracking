@@ -12,6 +12,7 @@ llk_gradient(
   nu,
   omega,
   scheme = "Lie-Trotter",
+  potential_params = NULL,
   verbose = FALSE
 )
 }
@@ -19,11 +20,10 @@ llk_gradient(
 \item{data}{Data frame with columns X1, X2, V1, V2, time
 containing "true" positions and velocities at each time step}
 
-\item{push_mat}{Matrix of shape (n_steps-1, 2) containing the push
-at each time step}
+\item{push_mat}{Matrix of shape (n_steps, 2) containing the push at each time step}
 
-\item{potential_grad_mat}{Matrix of shape (n_steps-1, 2) containing the
-gradient of the potential at each time step}
+\item{potential_grad_mat}{Matrix of shape (n_steps, 2) containing the gradient of
+the potential at each time step}
 
 \item{tau}{RACVM parameter tau}
 
@@ -31,12 +31,17 @@ gradient of the potential at each time step}
 
 \item{omega}{RACVM parameter omega}
 
-\item{scheme}{Integration scheme}
+\item{scheme}{Integration scheme: "Lie-Trotter" or "Strang"}
+
+\item{potential_params}{Optional list with elements alpha, B for the Gaussian mixture
+potential. When provided, gradients w.r.t. potential parameters are appended.}
 
 \item{verbose}{If TRUE, print detailed computation steps}
 }
 \value{
-Numeric vector of length 3 with gradients w.r.t. tau, nu, omega
+Matrix of per-step gradients (n_steps-1 rows). Columns are tau, nu, omega,
+  and optionally alpha_1,...,alpha_J, logL11_1, L21_1, logL22_1, ...,
+  logL11_J, L21_J, logL22_J.
 }
 \description{
 Compute gradient of log-likelihood over entire trajectory

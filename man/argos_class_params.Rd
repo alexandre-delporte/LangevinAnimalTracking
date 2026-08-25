@@ -22,7 +22,7 @@ Location classes in increasing precision order: "B", "A", "0", "1", "2", "3".
 Class "Z" (invalid/deleted) is treated as class "B" (least precise).
 }
 \references{
-Brost, B.M., Hooten, M.B., Hanks, E.M., & Small, R.J. (2015).
+Appendix D in Brost, B.M., Hooten, M.B., Hanks, E.M., & Small, R.J. (2015).
   Animal movement constraints improve resource selection inference in the
   presence of telemetry error. \emph{Ecology}, 96(10), 2590-2597.
 }

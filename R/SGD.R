@@ -55,7 +55,20 @@
 #' @param lambda A positive scalar giving the domain penalisation parameter
 #'   \eqn{\lambda} used in the reflected Langevin push.
 #' @param num_particles A positive integer giving the number of particles
-#'   used in the particle filter.
+#'   used in the particle filter at the start of SGD (iteration 1). Used for
+#'   both the forward particle filter/FFBS and the conditional particle
+#'   filter (when \code{smoothing_method = "CPF"}).
+#' @param num_particles_min A positive integer giving the floor of the
+#'   particle count, reached at iteration \code{num_particles_decay_iter} and
+#'   held constant afterwards. Number of particles decreases linearly from
+#'   \code{num_particles} to \code{num_particles_min} across iterations. For
+#'   CPF, this floor can be as low as 5-10 since the conditional particle
+#'   filter with ancestor sampling mixes well with very few particles once
+#'   warm-started. Default is \code{num_particles} (i.e. no decay).
+#' @param num_particles_decay_iter A positive integer giving the iteration at
+#'   which the linear decay of the particle count reaches
+#'   \code{num_particles_min}. Default \code{SGD_iter} (decay over the whole
+#'   run).
 #' @param split_around_fixed_point Logical. If \code{TRUE}, the potential is
 #'   split around its fixed point. Currently not implemented and will throw an
 #'   error. Default \code{FALSE}.
@@ -87,6 +100,25 @@
 #'   Passed through to \code{particle_filter2D_cpp} and
 #'   \code{forward_filtering_backward_sampling} at every SGD iteration.
 #'   Only used when \code{error_dist = "argos"}. Default \code{NULL}.
+#' @param smoothing_method A character string, either \code{"FFBS"} (default)
+#'   or \code{"CPF"}. \code{"FFBS"} draws a fresh smoothed trajectory at every
+#'   SGD iteration via forward-filtering backward-sampling (\code{\link{forward_filtering_backward_sampling}}).
+#'   \code{"CPF"} instead uses the conditional particle filter with ancestor
+#'   sampling (\code{\link{conditional_particle_filter_cpp}}, Svensson et al.
+#'   2015) as a persistent MCMC chain over trajectories: the trajectory
+#'   sampled at iteration \code{k} is used as the conditioning
+#'   \code{reference_trajectory} at iteration \code{k+1} (Markovian stochastic
+#'   approximation), which typically mixes well with far fewer particles than
+#'   FFBS.
+#' @param n_sweeps_cpf A positive integer giving the number of CPF-AS sweeps
+#'   run per SGD iteration when \code{smoothing_method = "CPF"}. Default
+#'   \code{1} (one sweep per iteration, relying on warm-starting across SGD
+#'   iterations for mixing).
+#' @param init_trajectory An optional \code{n x 4} matrix giving the initial
+#'   conditioning trajectory for the CPF-AS chain (columns \code{X1, X2, V1,
+#'   V2}). Only used when \code{smoothing_method = "CPF"}. If \code{NULL}
+#'   (default), an initial trajectory is drawn via a single FFBS sample before
+#'   the first SGD iteration.
 #'
 #' @return A named list with the following elements:
 #' \describe{
@@ -115,14 +147,21 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
                        potential_params = NULL, estimate_potential_params = FALSE,
                        error_dist = NULL, error_params = NULL,
                        scheme = "Lie-Trotter", polygon, U0, lambda,
-                       num_particles, split_around_fixed_point = FALSE,
+                       num_particles, num_particles_min = num_particles,
+                       num_particles_decay_iter = SGD_iter,
+                       split_around_fixed_point = FALSE,
                        verbose = FALSE, gamma0 = 1e-4, K_preheat = 1000,
                        alpha = 2/3, C_heating = 1/1000, n_smooth_samples = 0,
-                       obs_error_params = NULL) {
+                       obs_error_params = NULL, smoothing_method = "FFBS",
+                       n_sweeps_cpf = 1,
+                       init_trajectory = NULL) {
 
   if (split_around_fixed_point) {
     stop("Not implemented yet with splitting around fixed point")
   }
+
+  smoothing_method <- match.arg(smoothing_method, c("FFBS", "CPF"))
+  ref_traj_cpf <- init_trajectory
 
   x_star    <- potential_params$x_star
   param_names <- names(sde_params)
@@ -168,6 +207,12 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
   for (k in 1:SGD_iter) {
     if (verbose) message("SGD iter ", k, "\n")
 
+    # Linearly decay the particle count from num_particles (k = 1) to
+    # num_particles_min (k >= num_particles_decay_iter)
+    frac_k <- min(1, (k - 1) / max(1, num_particles_decay_iter - 1))
+    num_particles_k <- round(num_particles + frac_k * (num_particles_min - num_particles))
+    if (verbose) message("num_particles_k: ", num_particles_k, "\n")
+
     sde_params_k <- as.list(theta[k, c("tau", "nu", "omega")])
 
     if (estimate_potential_params) {
@@ -182,36 +227,93 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
       potential_params_k <- potential_params
     }
 
-    # Run particle filter
-    filter <- particle_filter2D_cpp(
-      observations     = as.matrix(data[, c("time", "Y1", "Y2")]),
-      sde_params       = sde_params_k,
-      potential_params = potential_params_k,
-      error_params     = error_params,
-      error_dist       = error_dist,
-      polygon_coords   = polygon@coords,
-      U0 = U0, lambda = lambda,
-      num_particles    = num_particles,
-      split_around_fixed_point = split_around_fixed_point,
-      scheme = scheme, ESS_threshold = 0.8,
-      proposal_weight = 0.5,
-      verbose = FALSE, print_timing = FALSE,
-      obs_error_params = obs_error_params
-    )
+    if (smoothing_method == "FFBS") {
 
-    # Obtain latent trajectory via forward-filtering backward-sampling (FFBS)
-    backward_samples <- forward_filtering_backward_sampling(
-      data, 1, forward_filter = filter,
-      sde_params_k, potential_params_k,
-      error_params, error_dist, polygon,
-      U0, lambda, num_particles,
-      scheme = scheme,
-      split_around_fixed_point = FALSE,
-      verbose = FALSE,
-      obs_error_params = obs_error_params
-    )
-    z <- t(apply(backward_samples, c(2, 3), mean))
-    colnames(z) <- c("X1", "X2", "V1", "V2")
+      # Run particle filter
+      filter <- particle_filter2D_cpp(
+        observations     = as.matrix(data[, c("time", "Y1", "Y2")]),
+        sde_params       = sde_params_k,
+        potential_params = potential_params_k,
+        error_params     = error_params,
+        error_dist       = error_dist,
+        polygon_coords   = polygon@coords,
+        U0 = U0, lambda = lambda,
+        num_particles    = num_particles_k,
+        split_around_fixed_point = split_around_fixed_point,
+        scheme = scheme, ESS_threshold = 0.8,
+        proposal_weight = 0.5,
+        verbose = FALSE, print_timing = FALSE,
+        obs_error_params = obs_error_params
+      )
+
+      # Obtain latent trajectory via forward-filtering backward-sampling (FFBS)
+      backward_samples <- forward_filtering_backward_sampling(
+        data, 1, forward_filter = filter,
+        sde_params_k, potential_params_k,
+        error_params, error_dist, polygon,
+        U0, lambda, num_particles_k,
+        scheme = scheme,
+        split_around_fixed_point = FALSE,
+        verbose = FALSE,
+        obs_error_params = obs_error_params
+      )
+      z <- t(apply(backward_samples, c(2, 3), mean))
+      colnames(z) <- c("X1", "X2", "V1", "V2")
+
+    } else { # smoothing_method == "CPF"
+
+      if (is.null(ref_traj_cpf)) {
+        # Seed the CPF-AS chain with a single FFBS draw at the initial parameters
+        filter0 <- particle_filter2D_cpp(
+          observations     = as.matrix(data[, c("time", "Y1", "Y2")]),
+          sde_params       = sde_params_k,
+          potential_params = potential_params_k,
+          error_params     = error_params,
+          error_dist       = error_dist,
+          polygon_coords   = polygon@coords,
+          U0 = U0, lambda = lambda,
+          num_particles    = num_particles_k,
+          split_around_fixed_point = split_around_fixed_point,
+          scheme = scheme, ESS_threshold = 0.8,
+          proposal_weight = 0.5,
+          verbose = FALSE, print_timing = FALSE,
+          obs_error_params = obs_error_params
+        )
+        seed_sample <- forward_filtering_backward_sampling(
+          data, 1, forward_filter = filter0,
+          sde_params_k, potential_params_k,
+          error_params, error_dist, polygon,
+          U0, lambda, num_particles_k,
+          scheme = scheme,
+          split_around_fixed_point = FALSE,
+          verbose = FALSE,
+          obs_error_params = obs_error_params
+        )
+        ref_traj_cpf <- t(seed_sample[1, , ])
+      }
+
+      cpf_out <- conditional_particle_filter_cpp(
+        observations     = as.matrix(data[, c("time", "Y1", "Y2")]),
+        sde_params       = sde_params_k,
+        potential_params = potential_params_k,
+        error_params     = error_params,
+        error_dist       = error_dist,
+        polygon_coords   = polygon@coords,
+        U0 = U0, lambda = lambda,
+        num_particles    = num_particles_k,
+        scheme = scheme,
+        split_around_fixed_point = split_around_fixed_point,
+        proposal_weight = 0.5,
+        reference_trajectory = ref_traj_cpf,
+        n_sweeps = n_sweeps_cpf,
+        ESS_threshold = 0.8,
+        obs_error_params = obs_error_params
+      )
+
+      z <- cpf_out$trajectory
+      ref_traj_cpf <- z  # warm-start next SGD iteration
+      colnames(z) <- c("X1", "X2", "V1", "V2")
+    }
 
     # Compute push and potential gradient
     push_mat           <- matrix(NA, nrow = n, ncol = 2)

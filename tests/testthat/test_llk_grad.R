@@ -151,13 +151,15 @@ test_that("Gradient of one-step log-likelihood w.r.t. potential parameters
     lt_grad <- llk_gradient_one_step(
       U_next, U_prev, dt, push, grad_H_prev,
       tau, nu, omega, scheme = "Lie-Trotter",
-      potential_params = potential_params, x_star = x_star
+      potential_params = potential_params, x_star = x_star,
+      estimate_centers = TRUE
     )
     strang_grad <- llk_gradient_one_step(
       U_next, U_prev, dt, push, grad_H_prev,
       tau, nu, omega, scheme = "Strang",
       push_next = push_next, potential_grad_next = grad_H_next,
-      potential_params = potential_params, x_star = x_star
+      potential_params = potential_params, x_star = x_star,
+      estimate_centers = TRUE
     )
 
     lt_llk_xi <- function(pp) {
@@ -221,6 +223,41 @@ test_that("Gradient of one-step log-likelihood w.r.t. potential parameters
                      tolerance = 1e-5, scale = 1)
         expect_equal(as.numeric(strang_grad[param_name]),
                      (strang_llk_xi(pp_fwd) - strang_llk_xi(pp_bwd)) / (2 * eps),
+                     tolerance = 1e-5, scale = 1)
+      }
+    }
+
+    # Gradient w.r.t. attraction centres x_star
+    lt_llk_xstar <- function(xs) {
+      Q     <- RACVM_cov(tau, nu, omega, dt)
+      T_mat <- RACVM_link(tau, omega, dt)
+      gH    <- mix_gaussian_grad_cpp(X_prev, xs, potential_params, exclude = integer(0))
+      mu    <- as.vector(T_mat %*% (U_prev - dt * c(0, 0, push + gH)))
+      r     <- U_next - mu
+      -0.5 * determinant(Q, logarithm = TRUE)$modulus[1] - 0.5 * drop(t(r) %*% solve(Q, r))
+    }
+
+    strang_llk_xstar <- function(xs) {
+      Q      <- RACVM_cov(tau, nu, omega, dt)
+      T_mat  <- RACVM_link(tau, omega, dt)
+      gH_j   <- mix_gaussian_grad_cpp(X_prev, xs, potential_params, exclude = integer(0))
+      gH_jp1 <- mix_gaussian_grad_cpp(X_next, xs, potential_params, exclude = integer(0))
+      mu     <- as.vector(T_mat %*% (U_prev - (dt/2) * c(0, 0, push + gH_j)))
+      r      <- c(X_next, V_next + (dt/2) * (push_next + gH_jp1)) - mu
+      -0.5 * determinant(Q, logarithm = TRUE)$modulus[1] - 0.5 * drop(t(r) %*% solve(Q, r))
+    }
+
+    for (k in 1:J) {
+      for (l in 1:2) {
+        xs_fwd <- x_star; xs_fwd[k, l] <- xs_fwd[k, l] + eps
+        xs_bwd <- x_star; xs_bwd[k, l] <- xs_bwd[k, l] - eps
+
+        param_name <- paste0("xstar_", k, "_", l)
+        expect_equal(as.numeric(lt_grad[param_name]),
+                     (lt_llk_xstar(xs_fwd) - lt_llk_xstar(xs_bwd)) / (2 * eps),
+                     tolerance = 1e-5, scale = 1)
+        expect_equal(as.numeric(strang_grad[param_name]),
+                     (strang_llk_xstar(xs_fwd) - strang_llk_xstar(xs_bwd)) / (2 * eps),
                      tolerance = 1e-5, scale = 1)
       }
     }

@@ -226,6 +226,12 @@ closest_point_on_boundary_cpp <- function(x, coords, grad) {
     .Call(`_LangevinAnimalTracking_closest_point_on_boundary_cpp`, x, coords, grad)
 }
 
+#' Compute penalisation term (C++ implementation)
+#' @param x Numeric vector of length 2: coordinates of the point
+#' @param coords Matrix of polygon boundary coordinates (as in \code{polygon@coords})
+#' @param lambda penalty parameter
+#' @return Numeric vector of length 2: penalisation term
+#' @export
 compute_push_cpp <- function(x, coords, lambda) {
     .Call(`_LangevinAnimalTracking_compute_push_cpp`, x, coords, lambda)
 }

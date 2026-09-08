@@ -19,6 +19,7 @@ llk_gradient_one_step(
   potential_grad_next = NULL,
   potential_params = NULL,
   x_star = NULL,
+  estimate_centers = FALSE,
   verbose = FALSE
 )
 }
@@ -52,13 +53,18 @@ potential. When provided, gradients w.r.t. potential parameters are also returne
 \item{x_star}{Optional matrix of attraction centres (one row per component).
 Required when potential_params is provided.}
 
+\item{estimate_centers}{Logical. If TRUE (and potential_params/x_star are provided),
+gradients w.r.t. the attraction centres x_star are also appended. Default FALSE.}
+
 \item{verbose}{If TRUE, print detailed computation steps}
 }
 \value{
 Named numeric vector with gradients w.r.t. tau, nu, omega, and optionally
-  alpha_1,...,alpha_J, logL11_1, L21_1, logL22_1, ..., logL11_J, L21_J, logL22_J
+  alpha_1,...,alpha_J, logL11_1, L21_1, logL22_1, ..., logL11_J, L21_J, logL22_J,
+  and (if estimate_centers) xstar_1_1, xstar_1_2, ..., xstar_J_1, xstar_J_2
   where logL11_k = log(L_k[1,1]) and logL22_k = log(L_k[2,2]) are the
-  log-diagonal entries of the lower Cholesky factor of B_k
+  log-diagonal entries of the lower Cholesky factor of B_k, and xstar_k_l is the
+  l-th coordinate of the k-th attraction centre
 }
 \description{
 Compute gradient of log-likelihood for one time step

@@ -20,10 +20,10 @@ argos_class_params <- function() {
   list(
     "3" = list(sigma_obs = 2.259, rho = 0.85, a = 0.69, df = 16.5, p = 0.5),
     "2" = list(sigma_obs = 1.089, rho = 0.73, a = 0.42, df = 2.3, p = 0.5),
-    "1" = list(sigma_obs = 1.365, rho = 0.40, a = 0.64, df = 3, p = 0.5),
-    "0" = list(sigma_obs = 2.720, rho = 0.16, a = 0.50, df = 3, p = 0.5),
-    "A" = list(sigma_obs = 2.702, rho = 0.21, a = 0.90, df = 3, p = 0.5),
-    "B" = list(sigma_obs = 13.338, rho = 0.30, a = 0.74, df = 3, p = 0.5)
+    "1" = list(sigma_obs = 1.365, rho = 0.40, a = 0.64, df = 2.1, p = 0.5),
+    "0" = list(sigma_obs = 2.720, rho = 0.16, a = 0.50, df = 2.1, p = 0.5),
+    "A" = list(sigma_obs = 2.702, rho = 0.21, a = 0.90, df = 2.1, p = 0.5),
+    "B" = list(sigma_obs = 13.338, rho = 0.30, a = 0.74, df = 2.1, p = 0.5)
   )
 }
 

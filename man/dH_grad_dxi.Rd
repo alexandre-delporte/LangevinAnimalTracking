@@ -18,6 +18,7 @@ List with elements:
   dalpha: list of J 2-vectors, dalpha[[k]] = d(grad_H)/d(alpha_k)
   dB: list of J 3x2 matrices, dB[[k]][i,] = d(grad_H)/d(xi_k param i)
       where params are ordered (logL11, L21, logL22)
+  dx_star: list of J 2x2 matrices, dx_star[[k]][,l] = d(grad_H)/d((x_star_k)_l)
 }
 \description{
 Diagonal Cholesky entries L11_k and L22_k are parametrised on the log scale

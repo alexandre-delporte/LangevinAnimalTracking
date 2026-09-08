@@ -13,6 +13,7 @@ llk_gradient(
   omega,
   scheme = "Lie-Trotter",
   potential_params = NULL,
+  estimate_centers = FALSE,
   verbose = FALSE
 )
 }
@@ -36,12 +37,16 @@ the potential at each time step}
 \item{potential_params}{Optional list with elements alpha, B for the Gaussian mixture
 potential. When provided, gradients w.r.t. potential parameters are appended.}
 
+\item{estimate_centers}{Logical. If TRUE (and potential_params is provided), gradients
+w.r.t. the attraction centres x_star are also appended. Default FALSE.}
+
 \item{verbose}{If TRUE, print detailed computation steps}
 }
 \value{
 Matrix of per-step gradients (n_steps-1 rows). Columns are tau, nu, omega,
   and optionally alpha_1,...,alpha_J, logL11_1, L21_1, logL22_1, ...,
-  logL11_J, L21_J, logL22_J.
+  logL11_J, L21_J, logL22_J, and (if estimate_centers) xstar_1_1, xstar_1_2, ...,
+  xstar_J_1, xstar_J_2.
 }
 \description{
 Compute gradient of log-likelihood over entire trajectory

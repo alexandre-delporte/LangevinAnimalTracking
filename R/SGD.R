@@ -29,8 +29,19 @@
 #'   \eqn{B_k}) are jointly estimated alongside the movement parameters.
 #'   Diagonal entries are stored as \code{logL11_k = log(L_k[1,1])} and
 #'   \code{logL22_k = log(L_k[2,2])}, keeping \eqn{B_k} positive definite.
-#'   The centres \eqn{x_k^*} are always fixed. Individual parameters can be held
-#'   fixed via \code{fixpar}. Default \code{FALSE}.
+#'   By default the centres \eqn{x_k^*} are held fixed; see
+#'   \code{estimate_centers} to also estimate them. Individual parameters can
+#'   be held fixed via \code{fixpar}. Default \code{FALSE}.
+#' @param estimate_centers Logical. If \code{TRUE}, the attraction centres
+#'   \eqn{x_k^*} of the potential are also estimated, alongside \eqn{\alpha_k}
+#'   and \eqn{B_k} (columns \code{xstar_1_1}, \code{xstar_1_2}, ...,
+#'   \code{xstar_J_1}, \code{xstar_J_2} in the output). Requires
+#'   \code{estimate_potential_params = TRUE}. This gives three increasingly
+#'   flexible estimation modes: movement parameters only (both flags
+#'   \code{FALSE}); movement parameters plus potential shape with fixed
+#'   centres (\code{estimate_potential_params = TRUE},
+#'   \code{estimate_centers = FALSE}); and the full potential including
+#'   centres (both \code{TRUE}). Default \code{FALSE}.
 #' @param SGD_iter A positive integer giving the total number of SGD
 #'   iterations to run (across all three phases).
 #' @param potential_params A named list of parameters for the mixture of
@@ -145,19 +156,24 @@
 #' @export
 SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
                        potential_params = NULL, estimate_potential_params = FALSE,
+                       estimate_centers = FALSE,
                        error_dist = NULL, error_params = NULL,
                        scheme = "Lie-Trotter", polygon, U0, lambda,
                        num_particles, num_particles_min = num_particles,
                        num_particles_decay_iter = SGD_iter,
                        split_around_fixed_point = FALSE,
                        verbose = FALSE, gamma0 = 1e-4, K_preheat = 1000,
-                       alpha = 2/3, C_heating = 1/1000, n_smooth_samples = 0,
+                       alpha = 2/3, C_heating = 1/100, n_smooth_samples = 0,
                        obs_error_params = NULL, smoothing_method = "FFBS",
                        n_sweeps_cpf = 1,
                        init_trajectory = NULL) {
 
   if (split_around_fixed_point) {
     stop("Not implemented yet with splitting around fixed point")
+  }
+
+  if (estimate_centers && !estimate_potential_params) {
+    stop("estimate_centers = TRUE requires estimate_potential_params = TRUE")
   }
 
   smoothing_method <- match.arg(smoothing_method, c("FFBS", "CPF"))
@@ -171,12 +187,17 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
     J <- length(potential_params$alpha)
     xi_names <- c(paste0("alpha_", 1:J),
                   unlist(lapply(1:J, function(j) paste0(c("logL11","L21","logL22"), "_", j))))
-    param_names <- c(param_names, xi_names)
     xi_init <- c(potential_params$alpha,
                  unlist(lapply(potential_params$B, function(Bk) {
                    Lk <- t(chol(Bk))
                    c(log(Lk[1, 1]), Lk[2, 1], log(Lk[2, 2]))
                  })))
+    if (estimate_centers) {
+      xstar_names <- unlist(lapply(1:J, function(j) paste0("xstar_", j, "_", 1:2)))
+      xi_names <- c(xi_names, xstar_names)
+      xi_init  <- c(xi_init, as.vector(t(x_star)))
+    }
+    param_names <- c(param_names, xi_names)
     theta_init <- c(unlist(sde_params), xi_init)
   } else {
     J <- 0
@@ -222,9 +243,18 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
         Lj <- matrix(c(exp(l[1]), l[2], 0, exp(l[3])), 2, 2)
         Lj %*% t(Lj)
       })
-      potential_params_k <- list(alpha = alpha_k, B = B_k, x_star = x_star)
+      if (estimate_centers) {
+        x_star_k <- matrix(NA_real_, nrow = J, ncol = 2)
+        for (j in 1:J) {
+          x_star_k[j, ] <- theta[k, paste0("xstar_", j, "_", 1:2)]
+        }
+      } else {
+        x_star_k <- x_star
+      }
+      potential_params_k <- list(alpha = alpha_k, B = B_k, x_star = x_star_k)
     } else {
       potential_params_k <- potential_params
+      x_star_k <- x_star
     }
 
     if (smoothing_method == "FFBS") {
@@ -321,9 +351,9 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
 
     for (t in 1:n) {
       X <- z[t, c("X1", "X2")]
-      push_mat[t, ]           <- compute_push(X, polygon, lambda)
+      push_mat[t, ]           <- compute_push_cpp(as.numeric(X), polygon@coords, lambda)
       potential_grad_mat[t, ] <- mix_gaussian_grad_cpp(
-        X, x_star, list(B = potential_params_k$B, alpha = potential_params_k$alpha),
+        X, x_star_k, list(B = potential_params_k$B, alpha = potential_params_k$alpha),
         exclude = integer(0)
       )
     }
@@ -338,6 +368,7 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
       tau = theta[k, "tau"], nu = theta[k, "nu"],
       omega = theta[k, "omega"], scheme = scheme,
       potential_params = if (estimate_potential_params) potential_params_k else NULL,
+      estimate_centers = estimate_centers,
       verbose = FALSE
     )
 

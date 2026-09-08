@@ -286,6 +286,12 @@ bool is_point_inside_polygon_cpp(const arma::vec& x,
   return inside;
 }
 
+//' Compute penalisation term (C++ implementation)
+//' @param x Numeric vector of length 2: coordinates of the point
+//' @param coords Matrix of polygon boundary coordinates (as in \code{polygon@coords})
+//' @param lambda penalty parameter
+//' @return Numeric vector of length 2: penalisation term
+//' @export
 // [[Rcpp::export]]
 arma::vec compute_push_cpp(const arma::vec& x,
                            const arma::mat& coords,

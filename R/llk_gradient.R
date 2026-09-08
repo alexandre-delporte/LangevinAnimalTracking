@@ -229,13 +229,15 @@ dRACVM_link=function(tau,omega,h) {
 #'   dalpha: list of J 2-vectors, dalpha[[k]] = d(grad_H)/d(alpha_k)
 #'   dB: list of J 3x2 matrices, dB[[k]][i,] = d(grad_H)/d(xi_k param i)
 #'       where params are ordered (logL11, L21, logL22)
+#'   dx_star: list of J 2x2 matrices, dx_star[[k]][,l] = d(grad_H)/d((x_star_k)_l)
 dH_grad_dxi <- function(x, x_star, potential_params) {
   alpha <- potential_params$alpha
   B     <- potential_params$B
   J     <- length(alpha)
 
-  dalpha <- vector("list", J)
-  dB     <- vector("list", J)
+  dalpha  <- vector("list", J)
+  dB      <- vector("list", J)
+  dx_star <- vector("list", J)
 
   for (k in seq_len(J)) {
     d     <- x - x_star[k, ]
@@ -246,6 +248,9 @@ dH_grad_dxi <- function(x, x_star, potential_params) {
     a2ek  <- 2 * alpha[k] * ek
 
     dalpha[[k]] <- 2 * ek * Bd
+
+    # d(grad_H)/d(x_star_k): column l is 2*alpha_k*e_k(x)*(2*(B_k d)_l * B_k d - B_k[,l])
+    dx_star[[k]] <- a2ek * (2 * outer(Bd, Bd) - Bk)
 
     # d(grad_H)/d(B entries)
     dBk_raw <- matrix(0, nrow = 3, ncol = 2)
@@ -271,7 +276,7 @@ dH_grad_dxi <- function(x, x_star, potential_params) {
     dB[[k]] <- dLk
   }
 
-  list(dalpha = dalpha, dB = dB)
+  list(dalpha = dalpha, dB = dB, dx_star = dx_star)
 }
 
 
@@ -294,16 +299,21 @@ dH_grad_dxi <- function(x, x_star, potential_params) {
 #'   potential. When provided, gradients w.r.t. potential parameters are also returned.
 #' @param x_star Optional matrix of attraction centres (one row per component).
 #'   Required when potential_params is provided.
+#' @param estimate_centers Logical. If TRUE (and potential_params/x_star are provided),
+#'   gradients w.r.t. the attraction centres x_star are also appended. Default FALSE.
 #' @param verbose If TRUE, print detailed computation steps
 #' @return Named numeric vector with gradients w.r.t. tau, nu, omega, and optionally
-#'   alpha_1,...,alpha_J, logL11_1, L21_1, logL22_1, ..., logL11_J, L21_J, logL22_J
+#'   alpha_1,...,alpha_J, logL11_1, L21_1, logL22_1, ..., logL11_J, L21_J, logL22_J,
+#'   and (if estimate_centers) xstar_1_1, xstar_1_2, ..., xstar_J_1, xstar_J_2
 #'   where logL11_k = log(L_k[1,1]) and logL22_k = log(L_k[2,2]) are the
-#'   log-diagonal entries of the lower Cholesky factor of B_k
+#'   log-diagonal entries of the lower Cholesky factor of B_k, and xstar_k_l is the
+#'   l-th coordinate of the k-th attraction centre
 #'
 llk_gradient_one_step <- function(U_next, U_prev, delta, push, potential_grad,
                                   tau, nu, omega, scheme = "Lie-Trotter",
                                   push_next = NULL, potential_grad_next = NULL,
                                   potential_params = NULL, x_star = NULL,
+                                  estimate_centers = FALSE,
                                   verbose = FALSE) {
   
   # Get covariance and link matrices and their derivatives
@@ -422,6 +432,22 @@ llk_gradient_one_step <- function(U_next, U_prev, delta, push, potential_grad,
       }
     }
 
+    if (estimate_centers) {
+      grad_xstar  <- numeric(2 * J)
+      xstar_names <- character(2 * J)
+      idx2        <- 1
+      for (k in seq_len(J)) {
+        for (l in 1:2) {
+          dH_jp1          <- if (scheme == "Strang") dxi_jplus1$dx_star[[k]][, l] else NULL
+          grad_xstar[idx2]  <- xi_grad_one(dxi_j$dx_star[[k]][, l], dH_jp1)
+          xstar_names[idx2] <- paste0("xstar_", k, "_", l)
+          idx2 <- idx2 + 1
+        }
+      }
+      grad_xi  <- c(grad_xi, grad_xstar)
+      xi_names <- c(xi_names, xstar_names)
+    }
+
     names(grad_xi) <- xi_names
     grad <- c(grad, grad_xi)
   }
@@ -442,20 +468,26 @@ llk_gradient_one_step <- function(U_next, U_prev, delta, push, potential_grad,
 #' @param scheme Integration scheme: "Lie-Trotter" or "Strang"
 #' @param potential_params Optional list with elements alpha, B for the Gaussian mixture
 #'   potential. When provided, gradients w.r.t. potential parameters are appended.
+#' @param estimate_centers Logical. If TRUE (and potential_params is provided), gradients
+#'   w.r.t. the attraction centres x_star are also appended. Default FALSE.
 #' @param verbose If TRUE, print detailed computation steps
 #' @return Matrix of per-step gradients (n_steps-1 rows). Columns are tau, nu, omega,
 #'   and optionally alpha_1,...,alpha_J, logL11_1, L21_1, logL22_1, ...,
-#'   logL11_J, L21_J, logL22_J.
+#'   logL11_J, L21_J, logL22_J, and (if estimate_centers) xstar_1_1, xstar_1_2, ...,
+#'   xstar_J_1, xstar_J_2.
 #'
 llk_gradient <- function(data, push_mat, potential_grad_mat, tau, nu, omega,
                          scheme = "Lie-Trotter", potential_params = NULL,
+                         estimate_centers = FALSE,
                          verbose = FALSE) {
 
   n_steps <- nrow(data)
   x_star  <- potential_params$x_star
 
   # Determine number of output columns from a trial step
-  n_xi    <- if (!is.null(potential_params)) 4 * length(potential_params$alpha) else 0
+  n_xi    <- if (!is.null(potential_params)) {
+    4 * length(potential_params$alpha) + if (estimate_centers) 2 * length(potential_params$alpha) else 0
+  } else 0
   n_cols  <- 3 + n_xi
   total_grad <- matrix(0, ncol = n_cols, nrow = n_steps - 1)
 
@@ -482,6 +514,7 @@ llk_gradient <- function(data, push_mat, potential_grad_mat, tau, nu, omega,
       tau, nu, omega, scheme,
       push_next, potential_grad_next,
       potential_params = potential_params, x_star = x_star,
+      estimate_centers = estimate_centers,
       verbose = verbose
     )
     total_grad[j, ] <- step_grad

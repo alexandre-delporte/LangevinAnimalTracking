@@ -12,6 +12,7 @@ SGD_Fisher(
   SGD_iter,
   potential_params = NULL,
   estimate_potential_params = FALSE,
+  estimate_centers = FALSE,
   error_dist = NULL,
   error_params = NULL,
   scheme = "Lie-Trotter",
@@ -26,7 +27,7 @@ SGD_Fisher(
   gamma0 = 1e-04,
   K_preheat = 1000,
   alpha = 2/3,
-  C_heating = 1/1000,
+  C_heating = 1/100,
   n_smooth_samples = 0,
   obs_error_params = NULL,
   smoothing_method = "FFBS",
@@ -69,8 +70,20 @@ parameters (\eqn{\alpha_k} and the log-diagonal Cholesky parametrisation of
 \eqn{B_k}) are jointly estimated alongside the movement parameters.
 Diagonal entries are stored as \code{logL11_k = log(L_k[1,1])} and
 \code{logL22_k = log(L_k[2,2])}, keeping \eqn{B_k} positive definite.
-The centres \eqn{x_k^*} are always fixed. Individual parameters can be held
-fixed via \code{fixpar}. Default \code{FALSE}.}
+By default the centres \eqn{x_k^*} are held fixed; see
+\code{estimate_centers} to also estimate them. Individual parameters can
+be held fixed via \code{fixpar}. Default \code{FALSE}.}
+
+\item{estimate_centers}{Logical. If \code{TRUE}, the attraction centres
+\eqn{x_k^*} of the potential are also estimated, alongside \eqn{\alpha_k}
+and \eqn{B_k} (columns \code{xstar_1_1}, \code{xstar_1_2}, ...,
+\code{xstar_J_1}, \code{xstar_J_2} in the output). Requires
+\code{estimate_potential_params = TRUE}. This gives three increasingly
+flexible estimation modes: movement parameters only (both flags
+\code{FALSE}); movement parameters plus potential shape with fixed
+centres (\code{estimate_potential_params = TRUE},
+\code{estimate_centers = FALSE}); and the full potential including
+centres (both \code{TRUE}). Default \code{FALSE}.}
 
 \item{error_dist}{A character string specifying the observation error
 distribution (e.g. \code{"gaussian"}, \code{"argos"}).}

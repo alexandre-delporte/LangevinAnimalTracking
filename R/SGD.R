@@ -372,10 +372,17 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
       verbose = FALSE
     )
 
+    # A fixed parameter is treated as known, not estimated: its per-step
+    # score is zeroed here, at the source, so neither the gradient nor the
+    # running Fisher information estimate (Delta / I_k below, both built
+    # from grad_mat) carry any contribution from it — including its
+    # covariance with the free parameters, which a naive v_k[fix_idx] <- 0
+    # after the fact would not remove from I_k.
+    if (length(fix_idx) > 0) grad_mat[, fix_idx] <- 0
+
     v_k <- colSums(grad_mat)
     names(v_k) <- param_names
-    if (length(fix_idx) > 0) v_k[fix_idx] <- 0
-    
+
     # Three-phase learning rate schedule (Baey et al. 2023, Section 3.4.1) 
     if (k < K_preheat) {
       # Phase 1: exponential growth from gamma0 to 1
@@ -404,17 +411,26 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
       P_k <- I_k
     }
     
-    # Compute step direction — regularise if P_k is singular
-    direction <- tryCatch(
-      solve(P_k, v_k),
+    # Compute step direction over the free parameters only. fix_idx rows/
+    # columns of P_k are now exactly zero (grad_mat was zeroed there above),
+    # not just small, so they are dropped from the solve entirely rather
+    # than left in and patched up by regularisation — otherwise every
+    # fixed parameter would make P_k structurally singular from here on,
+    # and its (regularised, near-zero) row/column would still formally
+    # enter the linear system used to compute the free parameters' step.
+    free_idx <- if (length(fix_idx) > 0) setdiff(seq_len(p), fix_idx) else seq_len(p)
+    P_k_free <- P_k[free_idx, free_idx, drop = FALSE]
+    v_k_free <- v_k[free_idx]
+    direction_free <- tryCatch(
+      solve(P_k_free, v_k_free),
       error = function(e) {
         if (verbose) cat("solve failed; regularizing matrix\n")
-        P_k_reg <- 0.5 * (P_k + t(P_k)) + 1e-4 * diag(p)
-        return(solve(P_k_reg, v_k))
+        P_k_free_reg <- 0.5 * (P_k_free + t(P_k_free)) + 1e-4 * diag(length(free_idx))
+        return(solve(P_k_free_reg, v_k_free))
       }
     )
-    direction <- as.numeric(direction)
-    if (length(fix_idx) > 0) direction[fix_idx] <- 0
+    direction <- numeric(p)
+    direction[free_idx] <- as.numeric(direction_free)
     theta[k + 1, ] <- theta[k, ] + gamma_k * direction
     
     # --- Heating phase termination via 3rd-order exponential mean filter ---
@@ -449,14 +465,21 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
     }
     
     if (verbose) {
+      
+      ev <- eigen(I_k)
+      
       message("v_k: ",     paste(round(v_k, 4), collapse = " "), "\n")
       message("I_k: ",     paste(round(I_k, 4), collapse = " "), "\n")
       message("eigenvalues I_k: ",
-              paste(round(eigen(I_k)$values, 4), collapse = " "), "\n")
+              paste(round(ev$values,4), collapse = " "), "\n")
       message("direction: ",
               paste(round(direction, 4), collapse = " "), "\n")
       message("theta: ",
               paste(round(theta[k + 1, ], 4), collapse = " "), "\n")
+      
+      null_dir<- ev$vectors[,which.min(ev$values)]
+      names(null_dir) <- param_names
+      message("null direction: ",paste(round(null_dir, 4), collapse = " "), "\n")
     }
   }
   

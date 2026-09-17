@@ -36,7 +36,7 @@ llk_one_step<-function(Y,U_next,U_prev,delta,push_prev,push_next=NULL,
     
       U_hat<-solve_ODE(U_prev,delta,push_prev,
                        potential_params,
-                       ind_fixed_point)
+                       ind_fixed_point,nu)
       
       #SDE mean and covariance
       OU_solution<-solve_SDE(U_hat,delta,tau,nu,omega,potential_params,
@@ -57,7 +57,7 @@ llk_one_step<-function(Y,U_next,U_prev,delta,push_prev,push_next=NULL,
     
     U_hat<-solve_ODE(U_prev,delta/2,push_prev,
                      potential_params,
-                     ind_fixed_point)
+                     ind_fixed_point,nu)
     
     #SDE mean and covariance
     OU_solution<-solve_SDE(U_hat,delta,tau,nu,omega,potential_params,

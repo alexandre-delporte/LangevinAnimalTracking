@@ -87,7 +87,7 @@ forward_filtering_backward_sampling <-
             }
           #ODE step 
           U_hat<-solve_ODE_cpp(U_prev,delta,push_array[k,,j],potential_params,
-                           ind_fixed_point_current)
+                           nu,ind_fixed_point_current)
           
           #SDE mean and covariance
           OU_solution<-solve_SDE_cpp(U_hat,delta,tau,nu,omega,potential_params,
@@ -114,7 +114,7 @@ forward_filtering_backward_sampling <-
           
           #ODE solution
           U_hat<-solve_ODE_cpp(U_prev,delta/2,push_array[k,,j],potential_params,
-                               ind_fixed_point_current)
+                               nu,ind_fixed_point_current)
           #SDE mean and covariance
           OU_solution<-solve_SDE_cpp(U_hat,delta,tau,nu,omega,potential_params,
                                  ind_fixed_point_current,NULL,NULL)
@@ -125,10 +125,12 @@ forward_filtering_backward_sampling <-
           V_next <- U_next[3:4]
           
           push_next<-compute_push(X_next,polygon,lambda)
-          potential_grad_next<-mix_gaussian_grad_cpp(X_next, x_star,
-                                                     list(B=B,alpha=alpha), 
+          # Scaled by 2*nu^2/pi — see llk_gradient.R docs.
+          nu_scale <- 2*nu^2/pi
+          potential_grad_next<-nu_scale*mix_gaussian_grad_cpp(X_next, x_star,
+                                                     list(B=B,alpha=alpha),
                                                      exclude=integer(0))
-          
+
           V_tilde <- V_next + (delta/2) * (push_next + potential_grad_next)
           U_tilde_next <- c(X_next, V_tilde)
           

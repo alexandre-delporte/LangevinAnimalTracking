@@ -120,12 +120,16 @@ kalman_filter <- function(data,sde_params,potential_params=NULL,
       
       L <- RACVM_link(tau,omega,dt)
       Q<- RACVM_cov(tau,nu,omega, dt)
-      
-      # Prediction step
-      fv <- push+mix_gaussian_grad_cpp(X_prev,x_star,list(B=B,alpha=alpha),
+
+      # Prediction step. Potential gradient scaled by 2*nu^2/pi so that the
+      # process's stationary distribution is exp(H(x)) independent of tau/nu
+      # (see llk_gradient.R docs) — not applied in the split_around_fixed_point
+      # branch above, see solve_ODE()'s note.
+      nu_scale <- 2*nu^2/pi
+      fv <- push+nu_scale*mix_gaussian_grad_cpp(X_prev,x_star,list(B=B,alpha=alpha),
                                        exclude=integer(0))
-      
-      
+
+
       U_pred <- L %*%U_hat[k - 1, ] -dt*L%*% c(0,0,fv)
       R_pred <- L %*% R %*% t(L) + Q
     }
@@ -281,13 +285,17 @@ extended_kalman_filter <- function(data,sde_params,potential_hessian,
       
       L<-RACVM_link(tau,omega,dt)
       Q<-RACVM_cov(tau,nu,omega,dt)
-      
-      f_prev <- c(rep(0, 2),push+mix_gaussian_grad_cpp(X_prev,x_star,list(B=B,alpha=alpha),
+
+      # Potential gradient (and its Jacobian, in F_prev below) scaled by
+      # 2*nu^2/pi — see kalman_filter()'s non-fixed-point branch above and
+      # llk_gradient.R docs for why.
+      nu_scale <- 2*nu^2/pi
+      f_prev <- c(rep(0, 2),push+nu_scale*mix_gaussian_grad_cpp(X_prev,x_star,list(B=B,alpha=alpha),
                                                        exclude=integer(0)))
-      
+
       F_prev <- rbind(
         cbind(matrix(0, 2, 2), matrix(0, 2, 2)),
-        cbind((diag(2)-projection_grad)/lambda+potential_hessian(X_prev),matrix(0, 2, 2)))
+        cbind((diag(2)-projection_grad)/lambda+nu_scale*potential_hessian(X_prev),matrix(0, 2, 2)))
     
       #prediction
       U_pred <- L %*% U_hat[k - 1, ] -dt*L%*% f_prev

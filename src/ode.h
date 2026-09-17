@@ -9,6 +9,7 @@ arma::vec solve_ODE_cpp(const arma::vec& U,
                         double delta,
                         const arma::vec& push,
                         const Rcpp::List& potential_params,
+                        double nu,
                         Rcpp::Nullable<int> ind_fixed_point = R_NilValue);
 
 #endif // ODE_H

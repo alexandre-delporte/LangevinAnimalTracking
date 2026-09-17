@@ -8,11 +8,16 @@ using namespace arma;
 
 
 
+//' @param nu Velocity scale parameter. Only used (to scale the potential
+//' gradient by 2*nu^2/pi) when ind_fixed_point is NULL; see note in
+//' solve_ODE() (R/simulate.R) for why the ind_fixed_point branch does not
+//' yet apply this scaling.
 // [[Rcpp::export]]
 arma::vec solve_ODE_cpp(const arma::vec& U,
                         double delta,
                         const arma::vec& push,
                         const List& potential_params,
+                        double nu,
                         Nullable<int> ind_fixed_point) {
   
   // --- extract position ---
@@ -58,12 +63,16 @@ arma::vec solve_ODE_cpp(const arma::vec& U,
     // no fixed point
     IntegerVector exclude; // empty
     arma::vec potential_grad = mix_gaussian_grad_cpp(X, x_star, potential_params, exclude);
-    
+
+    // Scaled by 2*nu^2/pi so the process's stationary distribution is
+    // exp(H(x)) independent of tau/nu; see R/llk_gradient.R docs.
+    double nu_scale = 2.0 * nu * nu / M_PI;
+
     // Build a vector of zeros with same length as U
     arma::vec tmp(U.n_elem, arma::fill::zeros);
 
     // Assign push + potential_grad to positions 3 and 4 (0-based indices 2 and 3)
-    tmp.subvec(2, 3) = push + potential_grad;
+    tmp.subvec(2, 3) = push + nu_scale * potential_grad;
     U_hat = U - delta * tmp;
   }
 

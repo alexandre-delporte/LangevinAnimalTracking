@@ -50,9 +50,9 @@ static inline arma::vec propagate_particle_with_cache(
     // --- ODE FULL step ---
     global_timer.start();
     if (ind_fixed_point > 0) {
-      cache.U_hat = solve_ODE_cpp(U_prev, delta, push, potential_params, wrap(ind_fixed_point));
+      cache.U_hat = solve_ODE_cpp(U_prev, delta, push, potential_params, nu, wrap(ind_fixed_point));
     } else {
-      cache.U_hat = solve_ODE_cpp(U_prev, delta, push, potential_params, R_NilValue);
+      cache.U_hat = solve_ODE_cpp(U_prev, delta, push, potential_params, nu, R_NilValue);
     }
     global_timer.record("prop_ode");
     
@@ -133,9 +133,9 @@ static inline arma::vec propagate_particle_with_cache(
     // --- ODE HALF-step ---
     global_timer.start();
     if (ind_fixed_point > 0) {
-      cache.U_hat = solve_ODE_cpp(U_prev, delta/2.0, push, potential_params, wrap(ind_fixed_point));
+      cache.U_hat = solve_ODE_cpp(U_prev, delta/2.0, push, potential_params, nu, wrap(ind_fixed_point));
     } else {
-      cache.U_hat = solve_ODE_cpp(U_prev, delta/2.0, push, potential_params, R_NilValue);
+      cache.U_hat = solve_ODE_cpp(U_prev, delta/2.0, push, potential_params, nu, R_NilValue);
     }
     global_timer.record("prop_ode");
     
@@ -230,8 +230,11 @@ static inline arma::vec propagate_particle_with_cache(
       grad_term = push_next + grad + 2.0*alpha_l*(e_l_next-1.0) * (B_l*(X_next - x_star_l));
       
     } else {
+      // Scaled by 2*nu^2/pi — see R/llk_gradient.R docs; not applied in the
+      // ind_fixed_point branch above, see solve_ODE()'s note (R/simulate.R).
+      double nu_scale = 2.0 * nu * nu / M_PI;
       arma::vec grad = mix_gaussian_grad_cpp(X_next, x_star, potential_params, IntegerVector());
-      grad_term = push_next + grad;
+      grad_term = push_next + nu_scale * grad;
     }
     
     // --- Propagate velocity conditionally ---
@@ -827,7 +830,7 @@ static inline double transition_log_density(
   Nullable<int> ind_fp_arg = (ind_fixed_point > 0) ? Nullable<int>(wrap(ind_fixed_point)) : Nullable<int>(R_NilValue);
 
   if (scheme == "Lie-Trotter") {
-    arma::vec U_hat = solve_ODE_cpp(U_prev, delta, push, potential_params, ind_fp_arg);
+    arma::vec U_hat = solve_ODE_cpp(U_prev, delta, push, potential_params, nu, ind_fp_arg);
 
     List OU_solution = use_precomputed_LQ
       ? solve_SDE_cpp(U_hat, delta, tau, nu, omega, potential_params, ind_fp_arg, wrap(L_precomputed), wrap(Q_precomputed))
@@ -841,7 +844,7 @@ static inline double transition_log_density(
   } else { // Strang
     arma::mat x_star = potential_params["x_star"];
 
-    arma::vec U_hat = solve_ODE_cpp(U_prev, delta / 2.0, push, potential_params, ind_fp_arg);
+    arma::vec U_hat = solve_ODE_cpp(U_prev, delta / 2.0, push, potential_params, nu, ind_fp_arg);
 
     List OU_solution = use_precomputed_LQ
       ? solve_SDE_cpp(U_hat, delta, tau, nu, omega, potential_params, ind_fp_arg, wrap(L_precomputed), wrap(Q_precomputed))
@@ -854,7 +857,10 @@ static inline double transition_log_density(
     arma::vec V_next = U_target.subvec(2, 3);
 
     arma::vec push_next = compute_push_cpp(X_next, polygon_coords, lambda);
-    arma::vec grad_next = mix_gaussian_grad_cpp(X_next, x_star, potential_params, IntegerVector());
+    // Scaled by 2*nu^2/pi — see R/llk_gradient.R docs. Always the naive
+    // (non-fixed-point) gradient here, per this function's doc comment above.
+    double nu_scale = 2.0 * nu * nu / M_PI;
+    arma::vec grad_next = nu_scale * mix_gaussian_grad_cpp(X_next, x_star, potential_params, IntegerVector());
 
     arma::vec V_tilde = V_next + (delta / 2.0) * (push_next + grad_next);
     arma::vec U_tilde_next = arma::join_vert(X_next, V_tilde);

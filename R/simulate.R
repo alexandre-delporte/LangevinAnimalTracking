@@ -20,28 +20,43 @@
 #'   }
 #' @param ind_fixed_point Index of fixed point of the mixture of gaussian
 #' potential
+#' @param nu RACVM speed parameter. Only used (to scale the potential
+#'   gradient by \code{2*nu^2/pi}) when \code{ind_fixed_point} is NULL; see
+#'   note below.
 #'
 #' @return Numeric vector of length 4. Updated state after ODE step.
+#' @note The potential gradient is scaled by \code{2*nu^2/pi} in the
+#'   non-fixed-point branch, so that the drift is
+#'   \code{(2*nu^2/pi) * grad(H(x))} rather than \code{grad(H(x))}
+#'   unscaled — this is what makes the process's stationary distribution
+#'   \code{exp(H(x))} independent of tau and nu (see llk_gradient.R docs).
+#'   The \code{ind_fixed_point} branch does NOT yet apply this scaling: it
+#'   relies on an exact matrix-exponential solve in \code{solve_SDE()} for
+#'   the local-linear part of the chosen component, and consistently scaling
+#'   that branch requires differentiating a matrix exponential w.r.t. nu
+#'   (needed for SGD), which hasn't been implemented. Do not mix
+#'   \code{split_around_fixed_point = TRUE} with the scaled potential.
 solve_ODE<-function(U,delta,push,
                     potential_params=NULL,
-                    ind_fixed_point=NULL) {
-  
+                    ind_fixed_point=NULL,
+                    nu=NULL) {
+
   #get position
   X<-U[1:2]
-  
+
   alpha<-potential_params$alpha;B<-potential_params$B
   x_star<-potential_params$x_star
-  
+
   if (!(is.null(ind_fixed_point))) {
-    
-    
-    
+
+
+
     #choose center
     l<-ind_fixed_point
-    
+
     #extract parameters for the chosen center
     B_l<-B[[l]];alpha_l<-alpha[l];x_star_l<-x_star[l,]
-    
+
     #compute non linear term for ODE solution
     #compute mahalanobis distances
     quad<-t(X-x_star_l)%*%B_l%*%(X-x_star_l)
@@ -50,20 +65,21 @@ solve_ODE<-function(U,delta,push,
                                list(B=B,alpha=alpha),
                                exclude=l)+
       2*alpha_l*(e_l-1)*B_l%*%(X-x_star_l)
-    
+
     #ODE solution
     U_hat<-U-delta*c(0,0,gv)
   }
-  
+
   else {
-    
+
     #ODE solution
     potential_grad<-mix_gaussian_grad_cpp(X,x_star,list(B=B,alpha=alpha),
                                           exclude=integer(0))
-    U_hat<-U-delta*c(0,0,push)-delta*c(0,0,potential_grad)
-    
+    nu_scale<-2*nu^2/pi
+    U_hat<-U-delta*c(0,0,push)-delta*c(0,0,nu_scale*potential_grad)
+
   }
-  
+
   return(U_hat)
 }
 
@@ -254,7 +270,7 @@ simulate_2D_trajectory <- function(n_sim,sde_params,
         
       if (scheme=="Lie-Trotter") {
         U_hat<-solve_ODE(U[i,],dt,push,potential_params,
-                                   ind_fixed_point)
+                                   ind_fixed_point,nu)
         
         #SDE mean and covariance
         OU_solution<-solve_SDE(U_hat,dt,tau,nu,omega,potential_params,
@@ -267,7 +283,7 @@ simulate_2D_trajectory <- function(n_sim,sde_params,
       } else if (scheme =="Strang") {
           
           U_hat<-solve_ODE(U[i,],dt/2,push,potential_params,
-                           ind_fixed_point)
+                           ind_fixed_point,nu)
           
           #SDE mean and covariance
           OU_solution<-solve_SDE(U_hat,dt,tau,nu,omega,potential_params,
@@ -297,10 +313,11 @@ simulate_2D_trajectory <- function(n_sim,sde_params,
             U[i+1,]<-Z-dt/2*c(0,0,new_push)-dt/2*c(0,0,grad_Z)
             
           } else {
-            
+
             potential_grad <- mix_gaussian_grad_cpp(Z[1:2], x_star, list(B=B, alpha=alpha),
                                                   exclude = integer(0))
-            U[i+1,]<-Z-dt/2*c(0,0,new_push)-dt/2*c(0,0,potential_grad)
+            nu_scale <- 2*nu^2/pi
+            U[i+1,]<-Z-dt/2*c(0,0,new_push)-dt/2*c(0,0,nu_scale*potential_grad)
           }
         }
       epsilon <- switch(error_dist,

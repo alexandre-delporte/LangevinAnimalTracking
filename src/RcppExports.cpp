@@ -12,8 +12,8 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // solve_ODE_cpp
-arma::vec solve_ODE_cpp(const arma::vec& U, double delta, const arma::vec& push, const List& potential_params, Nullable<int> ind_fixed_point);
-RcppExport SEXP _LangevinAnimalTracking_solve_ODE_cpp(SEXP USEXP, SEXP deltaSEXP, SEXP pushSEXP, SEXP potential_paramsSEXP, SEXP ind_fixed_pointSEXP) {
+arma::vec solve_ODE_cpp(const arma::vec& U, double delta, const arma::vec& push, const List& potential_params, double nu, Nullable<int> ind_fixed_point);
+RcppExport SEXP _LangevinAnimalTracking_solve_ODE_cpp(SEXP USEXP, SEXP deltaSEXP, SEXP pushSEXP, SEXP potential_paramsSEXP, SEXP nuSEXP, SEXP ind_fixed_pointSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -21,8 +21,9 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
     Rcpp::traits::input_parameter< const arma::vec& >::type push(pushSEXP);
     Rcpp::traits::input_parameter< const List& >::type potential_params(potential_paramsSEXP);
+    Rcpp::traits::input_parameter< double >::type nu(nuSEXP);
     Rcpp::traits::input_parameter< Nullable<int> >::type ind_fixed_point(ind_fixed_pointSEXP);
-    rcpp_result_gen = Rcpp::wrap(solve_ODE_cpp(U, delta, push, potential_params, ind_fixed_point));
+    rcpp_result_gen = Rcpp::wrap(solve_ODE_cpp(U, delta, push, potential_params, nu, ind_fixed_point));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -312,7 +313,7 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_LangevinAnimalTracking_solve_ODE_cpp", (DL_FUNC) &_LangevinAnimalTracking_solve_ODE_cpp, 5},
+    {"_LangevinAnimalTracking_solve_ODE_cpp", (DL_FUNC) &_LangevinAnimalTracking_solve_ODE_cpp, 6},
     {"_LangevinAnimalTracking_particle_filter2D_cpp", (DL_FUNC) &_LangevinAnimalTracking_particle_filter2D_cpp, 16},
     {"_LangevinAnimalTracking_conditional_particle_filter_cpp", (DL_FUNC) &_LangevinAnimalTracking_conditional_particle_filter_cpp, 16},
     {"_LangevinAnimalTracking_OU_cov_exact_cpp", (DL_FUNC) &_LangevinAnimalTracking_OU_cov_exact_cpp, 4},

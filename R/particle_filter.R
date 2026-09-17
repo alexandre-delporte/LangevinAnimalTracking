@@ -306,7 +306,7 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
     
     #ODE solution
     U_hat<-solve_ODE_cpp(U,delta,push,potential_params,
-                     ind_fixed_point)
+                     nu,ind_fixed_point)
     
     #SDE mean and covariance
     OU_solution<-solve_SDE(U_hat,delta,tau,nu,omega,potential_params,
@@ -368,7 +368,7 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
     
     #ODE solution
     U_hat<-solve_ODE_cpp(U,delta/2,push,potential_params,
-                     ind_fixed_point)
+                     nu,ind_fixed_point)
     #SDE mean and covariance
     OU_solution<-solve_SDE(U_hat,delta,tau,nu,omega,potential_params,
                            ind_fixed_point,L,Q)
@@ -432,8 +432,12 @@ propagate_langevin_particle<-function(U,y,M,delta,push,
                                                  list(B=B,alpha=alpha), exclude=l) +
         2*alpha_l*(e_l_next-1)*B_l %*% (X_next-x_star_l)
     } else {
-      grad_term <- push_next + mix_gaussian_grad_cpp(X_next, x_star,
-                                                     list(B=B,alpha=alpha), 
+      # Potential gradient scaled by 2*nu^2/pi — see llk_gradient.R docs and
+      # kalman_filter()'s non-fixed-point branch for why; not applied in the
+      # ind_fixed_point branch above, see solve_ODE()'s note.
+      nu_scale <- 2*nu^2/pi
+      grad_term <- push_next + nu_scale*mix_gaussian_grad_cpp(X_next, x_star,
+                                                     list(B=B,alpha=alpha),
                                                      exclude=integer(0))
     }
     
@@ -496,8 +500,8 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
     
     ## ODE solution
     U_hat <- solve_ODE_cpp(U_prev, delta, push,
-                       potential_params, ind_fixed_point)
-    
+                       potential_params, nu, ind_fixed_point)
+
     ## SDE mean and covariance
     OU_solution <- solve_SDE(U_hat, delta, tau, nu, omega,
                              potential_params, ind_fixed_point,L,Q)
@@ -609,7 +613,7 @@ compute_langevin_weight <- function(U_pred, U_prev, y,M, delta, push,
     
     ## ODE half-step
     U_hat <- solve_ODE_cpp(U_prev, delta / 2, push,
-                       potential_params, ind_fixed_point)
+                       potential_params, nu, ind_fixed_point)
     
     ## SDE
     OU_solution <- solve_SDE(U_hat, delta, tau, nu, omega,

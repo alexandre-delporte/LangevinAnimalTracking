@@ -1,7 +1,5 @@
 
-library(sp)
-
-# Define the polygon 
+# Define the polygon
 polygon_coords <- matrix(c(
   0, 0,   
   5, 0,    
@@ -25,7 +23,7 @@ polygon_coords <- matrix(c(
   0, 0      # Close the polygon
 ), ncol = 2, byrow = TRUE)
 
-polygon <- Polygon(10*polygon_coords)
+polygon <- sp::Polygon(10*polygon_coords)
 
 
 # Define dynamics parameters

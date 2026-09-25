@@ -24,6 +24,7 @@ Imports:
     MASS,
     mvtnorm,
     sp,
+    dbscan,
     stats,
     parallel,
     ggplot2,

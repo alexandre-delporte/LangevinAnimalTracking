@@ -316,6 +316,69 @@ choose_center <- function(x, x_star, params) {
 }
 
 
+#' Initialise mixture-of-Gaussians potential parameters from data with HDBSCAN
+#'
+#' Clusters the observed positions with HDBSCAN (density-based, no need to fix
+#' the number of attraction zones in advance) and turns each non-noise cluster
+#' into one attraction well: the cluster centroid becomes \code{x_star_j} and
+#' the inverse of the cluster's sample covariance becomes the precision matrix
+#' \code{B_j}. The number of wells \code{J} is however many clusters HDBSCAN
+#' finds, not fixed in advance.
+#'
+#' @param data Data frame containing the observed positions
+#' @param coords Character vector of length 2 giving the names of the
+#'   coordinate columns in \code{data} (default \code{c("Y1","Y2")})
+#' @param minPts Minimum number of points per cluster, passed to
+#'   \code{dbscan::hdbscan}. Defaults to 10\% of the number of rows in
+#'   \code{data}
+#' @param alpha_init Initial mixture weight assigned to every cluster found.
+#'   Defaults to 0
+#' @param verbose logical. If TRUE (default), report the number of clusters found
+#'
+#' @return A list with elements \code{x_star} (J x 2 matrix of cluster
+#'   centroids), \code{B} (list of J precision matrices) and \code{alpha}
+#'   (vector of length J), ready to use as \code{potential_params}
+#' @export
+init_potential_params_hdbscan <- function(data, coords = c("Y1", "Y2"),
+                                           minPts = NULL, alpha_init = 0,
+                                           verbose = TRUE) {
+
+  if (!requireNamespace("dbscan", quietly = TRUE)) {
+    stop("Package 'dbscan' is required for init_potential_params_hdbscan().")
+  }
+
+  coords_all <- as.matrix(data[, coords])
+
+  if (is.null(minPts)) {
+    minPts <- max(5, round(0.1 * nrow(coords_all)))
+  }
+
+  hdb            <- dbscan::hdbscan(coords_all, minPts = minPts)
+  cluster_labels <- sort(unique(hdb$cluster[hdb$cluster != 0]))
+  J              <- length(cluster_labels)
+
+  if (J == 0) {
+    stop("HDBSCAN found no clusters (only noise) with minPts = ", minPts,
+         ". Try lowering minPts.")
+  }
+
+  if (verbose) {
+    message("HDBSCAN found ", J, " cluster(s) (excluding noise) for initial potential wells")
+  }
+
+  x_star <- do.call(rbind, lapply(cluster_labels, function(cl) {
+    colMeans(coords_all[hdb$cluster == cl, , drop = FALSE])
+  }))
+  dimnames(x_star) <- NULL
+
+  B <- lapply(cluster_labels, function(cl) {
+    solve(cov(coords_all[hdb$cluster == cl, , drop = FALSE]))
+  })
+
+  list(x_star = x_star, B = B, alpha = rep(alpha_init, J))
+}
+
+
 #' Function to compute RMSE between true and filtered positions
 #' @param true matrix of true positions (n x 2)
 #' @param filtered matrix of filtered positions (n x 2)

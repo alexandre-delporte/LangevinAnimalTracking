@@ -72,7 +72,7 @@ for (i in 2:nrow(data)) {
   
   push <- compute_push(X,polygon,lambda)
   U_hat<-solve_ODE(U,delta,push,potential_params,
-                   ind_fixed_point=NULL)
+                   ind_fixed_point=NULL,nu=nu)
   
   OU_solution<-solve_SDE(U_hat,delta,tau,nu,omega,potential_params,
                          ind_fixed_point=NULL)

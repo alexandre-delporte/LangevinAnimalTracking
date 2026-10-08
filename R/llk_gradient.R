@@ -283,25 +283,29 @@ dH_grad_dxi <- function(x, x_star, potential_params) {
 #' Compute gradient of log-likelihood for one time step
 #' Supports both Lie-Trotter and Strang schemes
 #'
-#' The velocity drift includes the potential gradient scaled by
-#' \code{nu_scale = 2*nu^2/pi}, i.e. the model's drift term is
-#' \code{nu_scale * potential_grad}, not \code{potential_grad} directly. This
-#' scaling is what makes the process's stationary distribution
+#' The velocity drift includes the potential gradient and the push, both
+#' scaled by \code{nu_scale = 2*nu^2/pi}, i.e. the model's drift term is
+#' \code{nu_scale * (push + potential_grad)}, not
+#' \code{push + potential_grad} directly. Scaling the push makes the
+#' penalisation strength scale with the speed of movement. Scaling the
+#' potential gradient is what makes the process's stationary distribution
 #' \code{exp(H(x))} independent of tau and nu (see set-up notes / Michelot
 #' 2024 Eq. 1, Blackwell 2026 Eq. 6): without it, alpha_k (well strength) and
 #' nu (speed) are only identifiable through their ratio. Because nu now
 #' enters the drift as well as the diffusion, its score gains a term beyond
 #' the existing dQ/dnu contribution (term1/term2) and beyond dT/dnu (which is
 #' identically zero, since the free-process link matrix T never depended on
-#' nu): d(nu_scale)/dnu = 4*nu/pi multiplies potential_grad (and, for the
-#' Strang scheme, potential_grad_next) inside mu and r respectively. That
+#' nu): d(nu_scale)/dnu = 4*nu/pi multiplies push + potential_grad (and, for
+#' the Strang scheme, push_next + potential_grad_next) inside mu and r
+#' respectively. That
 #' extra term is computed explicitly below rather than folded into the
 #' generic T_derivs loop.
 #'
 #' @param U_next State vector at next time step (X1, X2, V1, V2)
 #' @param U_prev State vector at previous time step (X1, X2, V1, V2)
 #' @param delta Time step size
-#' @param push Push vector at previous time step (length 2)
+#' @param push RAW (unscaled) push vector at previous time step (length 2);
+#'   the nu_scale factor is applied internally, not by the caller.
 #' @param potential_grad RAW (unscaled) gradient of the mixture potential H(x)
 #'   at the previous time step (length 2); the nu_scale factor is applied
 #'   internally, not by the caller.
@@ -309,7 +313,8 @@ dH_grad_dxi <- function(x, x_star, potential_params) {
 #' @param nu RACVM parameter nu
 #' @param omega RACVM parameter omega
 #' @param scheme Integration scheme: "Lie-Trotter" or "Strang"
-#' @param push_next Push vector at next time step (length 2) - REQUIRED for Strang scheme
+#' @param push_next RAW (unscaled) push vector at next time step (length 2) -
+#'   REQUIRED for Strang scheme
 #' @param potential_grad_next RAW (unscaled) gradient of H(x) at the next time
 #'   step (length 2) - REQUIRED for Strang scheme
 #' @param potential_params Optional list with elements alpha, B for the Gaussian mixture
@@ -352,7 +357,7 @@ llk_gradient_one_step <- function(U_next, U_prev, delta, push, potential_grad,
     sum(diag(Q_inv %*% dQ))
   })
 
-  # Coefficient scaling the potential gradient in the drift, and its
+  # Coefficient scaling the push and potential gradient in the drift, and its
   # derivative w.r.t. nu (see function-level docs above).
   nu_scale      <- 2 * nu^2 / pi
   dnu_scale_dnu <- 4 * nu / pi
@@ -367,10 +372,10 @@ llk_gradient_one_step <- function(U_next, U_prev, delta, push, potential_grad,
     X_next <- U_next[1:2]
     V_next <- U_next[3:4]
 
-    V_tilde <- V_next + (delta/2) * (push_next + nu_scale * potential_grad_next)
+    V_tilde <- V_next + (delta/2) * nu_scale * (push_next + potential_grad_next)
     U_tilde_next <- c(X_next, V_tilde)
 
-    g_prev <- c(0, 0, push + nu_scale * potential_grad)
+    g_prev <- c(0, 0, nu_scale * (push + potential_grad))
 
     U_hat_half <- U_prev - (delta/2) * g_prev
 
@@ -382,7 +387,7 @@ llk_gradient_one_step <- function(U_next, U_prev, delta, push, potential_grad,
 
     # U_hat_half's velocity half depends on nu (through nu_scale), beyond
     # what the (identically zero) dT/dnu captures.
-    dU_hat_half_dnu <- c(0, 0, -(delta/2) * dnu_scale_dnu * potential_grad)
+    dU_hat_half_dnu <- c(0, 0, -(delta/2) * dnu_scale_dnu * (push + potential_grad))
     mu_derivs$nu <- mu_derivs$nu + as.vector(T_mat %*% dU_hat_half_dnu)
 
     r <- U_tilde_next - mu
@@ -391,11 +396,11 @@ llk_gradient_one_step <- function(U_next, U_prev, delta, push, potential_grad,
     # through mu), which the generic r = target - mu(theta) derivation below
     # does not account for; that derivation assumes the target side of r is
     # theta-independent, true for tau/omega but no longer for nu.
-    dU_tilde_next_dnu <- c(0, 0, (delta/2) * dnu_scale_dnu * potential_grad_next)
+    dU_tilde_next_dnu <- c(0, 0, (delta/2) * dnu_scale_dnu * (push_next + potential_grad_next))
 
   } else if (scheme == "Lie-Trotter") {
 
-    g <- c(0, 0, push + nu_scale * potential_grad)
+    g <- c(0, 0, nu_scale * (push + potential_grad))
 
     mu <- as.vector(T_mat %*% (U_prev - delta * g))
 
@@ -405,7 +410,7 @@ llk_gradient_one_step <- function(U_next, U_prev, delta, push, potential_grad,
 
     # As above: the velocity half of (U_prev - delta*g) depends on nu beyond
     # what dT/dnu (identically zero) captures.
-    dg_dnu <- c(0, 0, dnu_scale_dnu * potential_grad)
+    dg_dnu <- c(0, 0, dnu_scale_dnu * (push + potential_grad))
     mu_derivs$nu <- mu_derivs$nu + as.vector(T_mat %*% (-delta * dg_dnu))
 
     r <- U_next - mu
@@ -451,7 +456,7 @@ llk_gradient_one_step <- function(U_next, U_prev, delta, push, potential_grad,
     if (scheme == "Strang") dxi_jplus1 <- dH_grad_dxi(X_next, x_star, potential_params)
 
     # dxi parameters (alpha, B, x_star) enter the drift only through the same
-    # nu_scale * potential_grad channel, so their score picks up the same
+    # nu_scale * potential_grad channel (the push does not depend on xi), so their score picks up the same
     # nu_scale multiplier as the tau/omega mu_derivs above (and needs no
     # additional term, unlike nu itself, since nu_scale does not depend on xi).
     xi_grad_one <- function(dH_j, dH_jplus1 = NULL) {

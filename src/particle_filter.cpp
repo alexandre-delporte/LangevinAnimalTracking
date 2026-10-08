@@ -230,11 +230,12 @@ static inline arma::vec propagate_particle_with_cache(
       grad_term = push_next + grad + 2.0*alpha_l*(e_l_next-1.0) * (B_l*(X_next - x_star_l));
       
     } else {
-      // Scaled by 2*nu^2/pi — see R/llk_gradient.R docs; not applied in the
-      // ind_fixed_point branch above, see solve_ODE()'s note (R/simulate.R).
+      // Push and gradient scaled by 2*nu^2/pi — see R/llk_gradient.R docs; not
+      // applied in the ind_fixed_point branch above, see solve_ODE()'s note
+      // (R/simulate.R).
       double nu_scale = 2.0 * nu * nu / M_PI;
       arma::vec grad = mix_gaussian_grad_cpp(X_next, x_star, potential_params, IntegerVector());
-      grad_term = push_next + nu_scale * grad;
+      grad_term = nu_scale * (push_next + grad);
     }
     
     // --- Propagate velocity conditionally ---
@@ -857,12 +858,13 @@ static inline double transition_log_density(
     arma::vec V_next = U_target.subvec(2, 3);
 
     arma::vec push_next = compute_push_cpp(X_next, polygon_coords, lambda);
-    // Scaled by 2*nu^2/pi — see R/llk_gradient.R docs. Always the naive
-    // (non-fixed-point) gradient here, per this function's doc comment above.
+    // Push and gradient scaled by 2*nu^2/pi — see R/llk_gradient.R docs.
+    // Always the naive (non-fixed-point) gradient here, per this function's
+    // doc comment above.
     double nu_scale = 2.0 * nu * nu / M_PI;
-    arma::vec grad_next = nu_scale * mix_gaussian_grad_cpp(X_next, x_star, potential_params, IntegerVector());
+    arma::vec grad_next = mix_gaussian_grad_cpp(X_next, x_star, potential_params, IntegerVector());
 
-    arma::vec V_tilde = V_next + (delta / 2.0) * (push_next + grad_next);
+    arma::vec V_tilde = V_next + (delta / 2.0) * nu_scale * (push_next + grad_next);
     arma::vec U_tilde_next = arma::join_vert(X_next, V_tilde);
 
     return log_dmvnorm_chol_cpp(U_tilde_next, mean, chol_cpp(Q));

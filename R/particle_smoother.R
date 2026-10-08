@@ -125,13 +125,13 @@ forward_filtering_backward_sampling <-
           V_next <- U_next[3:4]
           
           push_next<-compute_push(X_next,polygon,lambda)
-          # Scaled by 2*nu^2/pi — see llk_gradient.R docs.
+          # Push and gradient scaled by 2*nu^2/pi — see llk_gradient.R docs.
           nu_scale <- 2*nu^2/pi
-          potential_grad_next<-nu_scale*mix_gaussian_grad_cpp(X_next, x_star,
+          potential_grad_next<-mix_gaussian_grad_cpp(X_next, x_star,
                                                      list(B=B,alpha=alpha),
                                                      exclude=integer(0))
 
-          V_tilde <- V_next + (delta/2) * (push_next + potential_grad_next)
+          V_tilde <- V_next + (delta/2) * nu_scale * (push_next + potential_grad_next)
           U_tilde_next <- c(X_next, V_tilde)
           
           

@@ -21,15 +21,17 @@
 #' @param ind_fixed_point Index of fixed point of the mixture of gaussian
 #' potential
 #' @param nu RACVM speed parameter. Only used (to scale the potential
-#'   gradient by \code{2*nu^2/pi}) when \code{ind_fixed_point} is NULL; see
+#'   gradient and the push by \code{2*nu^2/pi}) when \code{ind_fixed_point} is NULL; see
 #'   note below.
 #'
 #' @return Numeric vector of length 4. Updated state after ODE step.
-#' @note The potential gradient is scaled by \code{2*nu^2/pi} in the
-#'   non-fixed-point branch, so that the drift is
-#'   \code{(2*nu^2/pi) * grad(H(x))} rather than \code{grad(H(x))}
-#'   unscaled — this is what makes the process's stationary distribution
-#'   \code{exp(H(x))} independent of tau and nu (see llk_gradient.R docs).
+#' @note The potential gradient and the push are scaled by \code{2*nu^2/pi}
+#'   in the non-fixed-point branch, so that the drift is
+#'   \code{(2*nu^2/pi) * (push + grad(H(x)))} rather than
+#'   \code{push + grad(H(x))} unscaled — this is what makes the process's
+#'   stationary distribution \code{exp(H(x))} independent of tau and nu, and
+#'   makes the penalisation strength scale with the speed of movement (see
+#'   llk_gradient.R docs).
 #'   The \code{ind_fixed_point} branch does NOT yet apply this scaling: it
 #'   relies on an exact matrix-exponential solve in \code{solve_SDE()} for
 #'   the local-linear part of the chosen component, and consistently scaling
@@ -76,7 +78,7 @@ solve_ODE<-function(U,delta,push,
     potential_grad<-mix_gaussian_grad_cpp(X,x_star,list(B=B,alpha=alpha),
                                           exclude=integer(0))
     nu_scale<-2*nu^2/pi
-    U_hat<-U-delta*c(0,0,push)-delta*c(0,0,nu_scale*potential_grad)
+    U_hat<-U-delta*nu_scale*c(0,0,push+potential_grad)
 
   }
 
@@ -317,7 +319,7 @@ simulate_2D_trajectory <- function(n_sim,sde_params,
             potential_grad <- mix_gaussian_grad_cpp(Z[1:2], x_star, list(B=B, alpha=alpha),
                                                   exclude = integer(0))
             nu_scale <- 2*nu^2/pi
-            U[i+1,]<-Z-dt/2*c(0,0,new_push)-dt/2*c(0,0,nu_scale*potential_grad)
+            U[i+1,]<-Z-dt/2*nu_scale*c(0,0,new_push+potential_grad)
           }
         }
       epsilon <- switch(error_dist,

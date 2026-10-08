@@ -62,8 +62,6 @@ double log_dmvnorm_chol_cpp(const arma::vec& x,
 //' @param mean1 Numeric vector of length \eqn{n}. Mean of the first Gaussian.
 //' @param mean2 Numeric vector of length \eqn{q}. Mean of the second Gaussian.
 //' @param M Link matrix of dimension \eqn{q \times n} that maps the state space.
-//' @param proposal_weight Scalar between 0 and 1 to attribute weight to 
-//' the first gaussian. Value 0.5 means equal weight for both gaussians.
 //'
 //' @return A list with components:
 //' \describe{
@@ -79,20 +77,17 @@ List product_gaussian_cpp(const arma::mat& P1,
                            const arma::mat& P2,
                            const arma::vec& mean1,
                            const arma::vec& mean2,
-                           const arma::mat& M,
-                           double proposal_weight) {
-  
+                           const arma::mat& M) {
+
   // Compute precision matrix of the product
- arma::mat Sigma_inv =
-	    2*proposal_weight*P1 + 2*(1-proposal_weight)*M.t() * P2 * M;
-  
+  arma::mat Sigma_inv = P1 + M.t() * P2 * M;
+
   // Force symmetry (numerical stability)
   Sigma_inv = 0.5 * (Sigma_inv + Sigma_inv.t());
-  
+
   // Compute precision-weighted mean
-  arma::vec b =
-	    2*proposal_weight * P1 * mean1 + 2*(1 - proposal_weight) * M.t() * P2 * mean2;
-  
+  arma::vec b = P1 * mean1 + M.t() * P2 * mean2;
+
   // Solve for mean: Sigma_inv * m = b
   arma::vec m = arma::solve(Sigma_inv, b);
   

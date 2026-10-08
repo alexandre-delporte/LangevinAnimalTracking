@@ -29,7 +29,7 @@ SGD_Fisher(
   alpha = 2/3,
   C_heating = 1/100,
   n_smooth_samples = 0,
-  obs_error_params = NULL,
+  error_params_per_obs = NULL,
   smoothing_method = "FFBS",
   n_sweeps_cpf = 1,
   init_trajectory = NULL
@@ -155,7 +155,7 @@ smoothed trajectories from the last \code{n_smooth_samples} iterations
 are saved and returned. These can be used to reconstruct plausible latent
 tracks consistent with the observations. Default \code{0}.}
 
-\item{obs_error_params}{Optional list of length \code{N} of per-observation
+\item{error_params_per_obs}{Optional list of length \code{N} of per-observation
 error parameter lists, as produced by \code{\link{make_argos_obs_params}}.
 Passed through to \code{particle_filter2D_cpp} and
 \code{forward_filtering_backward_sampling} at every SGD iteration.

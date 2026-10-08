@@ -106,7 +106,7 @@
 #'   smoothed trajectories from the last \code{n_smooth_samples} iterations
 #'   are saved and returned. These can be used to reconstruct plausible latent
 #'   tracks consistent with the observations. Default \code{0}.
-#' @param obs_error_params Optional list of length \code{N} of per-observation
+#' @param error_params_per_obs Optional list of length \code{N} of per-observation
 #'   error parameter lists, as produced by \code{\link{make_argos_obs_params}}.
 #'   Passed through to \code{particle_filter2D_cpp} and
 #'   \code{forward_filtering_backward_sampling} at every SGD iteration.
@@ -164,7 +164,7 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
                        split_around_fixed_point = FALSE,
                        verbose = FALSE, gamma0 = 1e-4, K_preheat = 1000,
                        alpha = 2/3, C_heating = 1/100, n_smooth_samples = 0,
-                       obs_error_params = NULL, smoothing_method = "FFBS",
+                       error_params_per_obs = NULL, smoothing_method = "FFBS",
                        n_sweeps_cpf = 1,
                        init_trajectory = NULL) {
 
@@ -271,9 +271,8 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
         num_particles    = num_particles_k,
         split_around_fixed_point = split_around_fixed_point,
         scheme = scheme, ESS_threshold = 0.8,
-        proposal_weight = 0.5,
         verbose = FALSE, print_timing = FALSE,
-        obs_error_params = obs_error_params
+        error_params_per_obs = error_params_per_obs
       )
 
       # Obtain latent trajectory via forward-filtering backward-sampling (FFBS)
@@ -285,7 +284,7 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
         scheme = scheme,
         split_around_fixed_point = FALSE,
         verbose = FALSE,
-        obs_error_params = obs_error_params
+        error_params_per_obs = error_params_per_obs
       )
       z <- t(apply(backward_samples, c(2, 3), mean))
       colnames(z) <- c("X1", "X2", "V1", "V2")
@@ -305,9 +304,8 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
           num_particles    = num_particles_k,
           split_around_fixed_point = split_around_fixed_point,
           scheme = scheme, ESS_threshold = 0.8,
-          proposal_weight = 0.5,
           verbose = FALSE, print_timing = FALSE,
-          obs_error_params = obs_error_params
+          error_params_per_obs = error_params_per_obs
         )
         seed_sample <- forward_filtering_backward_sampling(
           data, 1, forward_filter = filter0,
@@ -317,7 +315,7 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
           scheme = scheme,
           split_around_fixed_point = FALSE,
           verbose = FALSE,
-          obs_error_params = obs_error_params
+          error_params_per_obs = error_params_per_obs
         )
         ref_traj_cpf <- t(seed_sample[1, , ])
       }
@@ -333,11 +331,10 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
         num_particles    = num_particles_k,
         scheme = scheme,
         split_around_fixed_point = split_around_fixed_point,
-        proposal_weight = 0.5,
         reference_trajectory = ref_traj_cpf,
         n_sweeps = n_sweeps_cpf,
         ESS_threshold = 0.8,
-        obs_error_params = obs_error_params
+        error_params_per_obs = error_params_per_obs
       )
 
       z <- cpf_out$trajectory

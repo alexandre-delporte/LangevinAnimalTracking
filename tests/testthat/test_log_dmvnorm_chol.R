@@ -83,7 +83,7 @@ for (i in 2:nrow(data)) {
   
   scale<-error_params$scale;df<-error_params$df
   
-  gaussian_proposal<-product_gaussian(invQ,(df-2)/df/scale^2*diag(2),
+  gaussian_proposal<-product_gaussian_cpp(invQ,(df-2)/df/scale^2*diag(2),
                                            mean,y,L)
   
   log_pred_density_chol <- 

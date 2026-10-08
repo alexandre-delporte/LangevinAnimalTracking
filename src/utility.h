@@ -21,8 +21,7 @@ Rcpp::List product_gaussian_cpp(const arma::mat& P1,
                                 const arma::mat& P2,
                                 const arma::vec& mean1,
                                 const arma::vec& mean2,
-                                const arma::mat& M,
-                                double proposal_weight);
+                                const arma::mat& M);
 
 // Cholesky decomposition and inverse
 arma::mat chol_cpp(const arma::mat& Q);

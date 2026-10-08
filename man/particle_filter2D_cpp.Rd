@@ -8,42 +8,25 @@ and splitting schemes}
 particle_filter2D_cpp(
   observations,
   sde_params,
-  potential_params,
-  error_params,
-  error_dist,
   polygon_coords,
   U0,
   lambda,
   num_particles,
-  scheme,
-  split_around_fixed_point,
-  ESS_threshold,
-  proposal_weight,
-  verbose,
-  print_timing,
-  obs_error_params
+  potential_params = NULL,
+  error_params = NULL,
+  error_dist = "normal",
+  scheme = "Lie-Trotter",
+  split_around_fixed_point = FALSE,
+  ESS_threshold = 0.8,
+  verbose = FALSE,
+  print_timing = FALSE,
+  error_params_per_obs = NULL
 )
 }
 \arguments{
 \item{observations}{Matrix with dimensions N x 3: time, Y1, Y2}
 
 \item{sde_params}{List with elements: tau (persistence), nu (velocity scale), omega (rotation)}
-
-\item{potential_params}{List with elements:
-\itemize{
-  \item alpha: Numeric vector of mixture weights
-  \item B: List of precision matrices
-  \item x_star: Matrix of fixed point coordinates
-}}
-
-\item{error_params}{List of parameters for the measurement error distribution (contents depend on error_dist):
-\itemize{
-  \item For "normal": sigma_obs (observation error standard deviation)
-  \item For "scaled_t": scale and df (degrees of freedom)
-  \item For "argos": sigma_obs, df, rho, a, p
-}}
-
-\item{error_dist}{String specifying error distribution: "normal", "scaled_t", or "argos"}
 
 \item{polygon_coords}{Matrix of polygon boundary coordinates (N x 2)}
 
@@ -53,21 +36,43 @@ particle_filter2D_cpp(
 
 \item{num_particles}{Integer, number of particles to use in the filter}
 
-\item{scheme}{String, splitting scheme: "Lie-Trotter" or "Strang"}
+\item{potential_params}{List with elements:
+\itemize{
+  \item alpha: Numeric vector of mixture weights
+  \item B: List of precision matrices
+  \item x_star: Matrix of fixed point coordinates
+}
+Defaults to \code{NULL}, in which case the potential is set to zero everywhere
+(unpenalized free movement, no attraction to any point).}
 
-\item{split_around_fixed_point}{Logical, whether to split around fixed points}
+\item{error_params}{List of parameters for the measurement error distribution (contents depend on error_dist):
+\itemize{
+  \item For "normal": sigma_obs (observation error standard deviation)
+  \item For "scaled_t": scale and df (degrees of freedom)
+  \item For "argos": sigma_obs, df, rho, a, p
+}
+Defaults to \code{NULL}. May be left \code{NULL} only if \code{error_params_per_obs} is
+supplied instead (per-observation error parameters); at least one of the two is
+required.}
 
-\item{ESS_threshold}{Numeric between 0 and 1, threshold on effective sample size for resampling}
+\item{error_dist}{String specifying error distribution: "normal", "scaled_t", or "argos"
+(default "normal")}
 
-\item{proposal_weight}{Numeric between 0 and 1, weight attributed to the previous state in the Gaussian proposal}
+\item{scheme}{String, splitting scheme: "Lie-Trotter" or "Strang" (default "Lie-Trotter")}
 
-\item{verbose}{Logical, whether to print progress messages}
+\item{split_around_fixed_point}{Logical, whether to split around fixed points (default FALSE)}
 
-\item{print_timing}{Logical, whether to print profiling timing results (default: FALSE)}
+\item{ESS_threshold}{Numeric between 0 and 1, threshold on effective sample size for
+resampling (default 0.8)}
 
-\item{obs_error_params}{Optional list of length N, where each element is an error_params
+\item{verbose}{Logical, whether to print progress messages (default FALSE)}
+
+\item{print_timing}{Logical, whether to print profiling timing results (default FALSE)}
+
+\item{error_params_per_obs}{Optional list of length N, where each element is an error_params
 list for the corresponding observation. When provided (non-NULL), overrides error_params
-at each time step. Useful for ARGOS data where location class varies per observation.}
+at each time step, for any error_dist (e.g. useful for ARGOS data where the location
+class, and hence the error parameters, varies per observation). Defaults to \code{NULL}.}
 }
 \value{
 List with elements:

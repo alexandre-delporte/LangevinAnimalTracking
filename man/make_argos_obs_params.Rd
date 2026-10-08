@@ -19,7 +19,7 @@ A list of length \code{N}, where each element is an error parameter
   list (with \code{sigma_obs}, \code{rho}, \code{a}, \code{df}, \code{p}).
 }
 \description{
-Constructs the \code{obs_error_params} argument for \code{particle_filter2D}
+Constructs the \code{error_params_per_obs} argument for \code{particle_filter2D_cpp}
 from a vector of ARGOS location class codes. Each element of the returned
 list contains the error distribution parameters for the corresponding
 observation.
@@ -29,8 +29,8 @@ observation.
 classes <- c("2", "1", "3", "0", "B", "A", "2")
 obs_ep  <- make_argos_obs_params(classes)
 # Pass to particle filter:
-particle_filter2D(..., error_dist = "argos",
+particle_filter2D_cpp(..., error_dist = "argos",
                   error_params = argos_class_params()[["B"]],  # fallback
-                  obs_error_params = obs_ep)
+                  error_params_per_obs = obs_ep)
 }
 }

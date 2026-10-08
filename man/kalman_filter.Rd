@@ -22,9 +22,11 @@ kalman_filter(
 
 \item{sde_params}{List of parameters tau,nu,omega}
 
-\item{potential_params}{Parameters for a mixture of Gaussian potential.}
+\item{potential_params}{Parameters for a mixture of Gaussian potential.
+Defaults to \code{NULL}, in which case the potential is set to zero
+everywhere (unpenalized free movement, no attraction to any point).}
 
-\item{sigma_obs}{Array of covariance matrices for the 
+\item{sigma_obs}{Array of covariance matrices for the
 measurement error for each observation}
 
 \item{polygon}{polygon defining the ecological domain of interest}

@@ -5,7 +5,9 @@
 #' @param data data frame with columns Y1,Y2 for observations, time for time
 #' @param sde_params List of parameters tau,nu,omega
 #' @param potential_params Parameters for a mixture of Gaussian potential.
-#' @param sigma_obs Array of covariance matrices for the 
+#'   Defaults to \code{NULL}, in which case the potential is set to zero
+#'   everywhere (unpenalized free movement, no attraction to any point).
+#' @param sigma_obs Array of covariance matrices for the
 #' measurement error for each observation
 #' @param polygon polygon defining the ecological domain of interest
 #' @param lambda Penalisation parameter. Default : Inf (no penalisation)
@@ -53,17 +55,26 @@ kalman_filter <- function(data,sde_params,potential_params=NULL,
   if (split_around_fixed_point && is.null(potential_params)) {
     stop("split_around_fixed_point = TRUE requires non-null potential_params")
   }
-  
-  
+
+  # NULL means "no potential" (zero everywhere), encoded as a single mixture
+  # component with zero weight so downstream code is unchanged.
+  if (is.null(potential_params)) {
+    potential_params <- list(
+      x_star = matrix(c(0, 0), ncol = 2, byrow = TRUE),
+      B      = list(diag(c(1, 1))),
+      alpha  = c(0)
+    )
+  }
+
   tau<-sde_params$tau;nu <- sde_params$nu;omega<-sde_params$omega
-  
+
   n_steps <- nrow(data)
-  U_hat <- matrix(0, nrow = n_steps, ncol = length(U0)) 
+  U_hat <- matrix(0, nrow = n_steps, ncol = length(U0))
   U_hat[1, ] <- U0
-  R <- R0 
+  R <- R0
   Y<-as.matrix(data[,c("Y1","Y2")])
   H <- cbind(diag(2), matrix(0, 2, 2)) # Observation matrix
- 
+
   alpha<-potential_params$alpha;B<-potential_params$B
   x_star<-potential_params$x_star
   Gamma <- rbind(

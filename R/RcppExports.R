@@ -2,7 +2,7 @@
 # Generator token: 10BE3573-1514-4C36-9D1C-5A225CD40393
 
 #' @param nu Velocity scale parameter. Only used (to scale the potential
-#' gradient by 2*nu^2/pi) when ind_fixed_point is NULL; see note in
+#' gradient and the push by 2*nu^2/pi) when ind_fixed_point is NULL; see note in
 #' solve_ODE() (R/simulate.R) for why the ind_fixed_point branch does not
 #' yet apply this scaling.
 solve_ODE_cpp <- function(U, delta, push, potential_params, nu, ind_fixed_point) {
@@ -11,36 +11,43 @@ solve_ODE_cpp <- function(U, delta, push, potential_params, nu, ind_fixed_point)
 
 #' Run particle filter algorithm for the Langevin diffusion with specified measurement errors
 #' and splitting schemes
-#' 
+#'
 #' @param observations Matrix with dimensions N x 3: time, Y1, Y2
 #' @param sde_params List with elements: tau (persistence), nu (velocity scale), omega (rotation)
+#' @param polygon_coords Matrix of polygon boundary coordinates (N x 2)
+#' @param U0 Numeric vector of initial state (length 4: position and velocity)
+#' @param lambda Numeric, penalization parameter (positive number, Inf for no penalization)
+#' @param num_particles Integer, number of particles to use in the filter
 #' @param potential_params List with elements:
 #'   \itemize{
 #'     \item alpha: Numeric vector of mixture weights
 #'     \item B: List of precision matrices
 #'     \item x_star: Matrix of fixed point coordinates
 #'   }
+#'   Defaults to \code{NULL}, in which case the potential is set to zero everywhere
+#'   (unpenalized free movement, no attraction to any point).
 #' @param error_params List of parameters for the measurement error distribution (contents depend on error_dist):
 #'   \itemize{
 #'     \item For "normal": sigma_obs (observation error standard deviation)
 #'     \item For "scaled_t": scale and df (degrees of freedom)
 #'     \item For "argos": sigma_obs, df, rho, a, p
 #'   }
+#'   Defaults to \code{NULL}. May be left \code{NULL} only if \code{error_params_per_obs} is
+#'   supplied instead (per-observation error parameters); at least one of the two is
+#'   required.
 #' @param error_dist String specifying error distribution: "normal", "scaled_t", or "argos"
-#' @param polygon_coords Matrix of polygon boundary coordinates (N x 2)
-#' @param U0 Numeric vector of initial state (length 4: position and velocity)
-#' @param lambda Numeric, penalization parameter (positive number, Inf for no penalization)
-#' @param num_particles Integer, number of particles to use in the filter
-#' @param scheme String, splitting scheme: "Lie-Trotter" or "Strang"
-#' @param split_around_fixed_point Logical, whether to split around fixed points
-#' @param ESS_threshold Numeric between 0 and 1, threshold on effective sample size for resampling
-#' @param proposal_weight Numeric between 0 and 1, weight attributed to the previous state in the Gaussian proposal
-#' @param verbose Logical, whether to print progress messages
-#' @param print_timing Logical, whether to print profiling timing results (default: FALSE)
-#' @param obs_error_params Optional list of length N, where each element is an error_params
+#'   (default "normal")
+#' @param scheme String, splitting scheme: "Lie-Trotter" or "Strang" (default "Lie-Trotter")
+#' @param split_around_fixed_point Logical, whether to split around fixed points (default FALSE)
+#' @param ESS_threshold Numeric between 0 and 1, threshold on effective sample size for
+#'   resampling (default 0.8)
+#' @param verbose Logical, whether to print progress messages (default FALSE)
+#' @param print_timing Logical, whether to print profiling timing results (default FALSE)
+#' @param error_params_per_obs Optional list of length N, where each element is an error_params
 #'   list for the corresponding observation. When provided (non-NULL), overrides error_params
-#'   at each time step. Useful for ARGOS data where location class varies per observation.
-#' 
+#'   at each time step, for any error_dist (e.g. useful for ARGOS data where the location
+#'   class, and hence the error parameters, varies per observation). Defaults to \code{NULL}.
+#'
 #' @return List with elements:
 #'   \itemize{
 #'     \item particles: Array of particles (num_particles x 4 x N)
@@ -56,8 +63,8 @@ solve_ODE_cpp <- function(U, delta, push, potential_params, nu, ind_fixed_point)
 #'     \item ind_fixed_point: (if split_around_fixed_point=TRUE) Matrix of fixed point indices
 #'   }
 #' @export
-particle_filter2D_cpp <- function(observations, sde_params, potential_params, error_params, error_dist, polygon_coords, U0, lambda, num_particles, scheme, split_around_fixed_point, ESS_threshold, proposal_weight, verbose, print_timing, obs_error_params) {
-    .Call(`_LangevinAnimalTracking_particle_filter2D_cpp`, observations, sde_params, potential_params, error_params, error_dist, polygon_coords, U0, lambda, num_particles, scheme, split_around_fixed_point, ESS_threshold, proposal_weight, verbose, print_timing, obs_error_params)
+particle_filter2D_cpp <- function(observations, sde_params, polygon_coords, U0, lambda, num_particles, potential_params = NULL, error_params = NULL, error_dist = "normal", scheme = "Lie-Trotter", split_around_fixed_point = FALSE, ESS_threshold = 0.8, verbose = FALSE, print_timing = FALSE, error_params_per_obs = NULL) {
+    .Call(`_LangevinAnimalTracking_particle_filter2D_cpp`, observations, sde_params, polygon_coords, U0, lambda, num_particles, potential_params, error_params, error_dist, scheme, split_around_fixed_point, ESS_threshold, verbose, print_timing, error_params_per_obs)
 }
 
 #' Conditional particle filter with ancestor sampling (CPF-AS)
@@ -73,23 +80,29 @@ particle_filter2D_cpp <- function(observations, sde_params, potential_params, er
 #'
 #' @param observations Matrix with dimensions N x 3: time, Y1, Y2
 #' @param sde_params List with elements: tau, nu, omega
-#' @param potential_params List with elements: alpha, B, x_star
-#' @param error_params List of parameters for the measurement error distribution
-#' @param error_dist String specifying error distribution: "normal", "scaled_t", or "argos"
 #' @param polygon_coords Matrix of polygon boundary coordinates (N x 2)
 #' @param U0 Numeric vector of initial state (length 4)
 #' @param lambda Numeric, penalization parameter
 #' @param num_particles Integer, number of particles K (K-1 propagated + 1 reference)
-#' @param scheme String, splitting scheme: "Lie-Trotter" or "Strang"
-#' @param split_around_fixed_point Logical, whether to split around fixed points
-#' @param proposal_weight Numeric between 0 and 1, weight for the Gaussian proposal
 #' @param reference_trajectory Matrix (N x 4) giving the initial conditioning trajectory
+#' @param potential_params List with elements: alpha, B, x_star. Defaults to \code{NULL}, in
+#'   which case the potential is set to zero everywhere (unpenalized free movement).
+#' @param error_params List of parameters for the measurement error distribution. Defaults to
+#'   \code{NULL}. May be left \code{NULL} only if \code{error_params_per_obs} is supplied instead
+#'   (per-observation error parameters); at least one of the two is required.
+#' @param error_dist String specifying error distribution: "normal", "scaled_t", or "argos"
+#'   (default "normal")
+#' @param scheme String, splitting scheme: "Lie-Trotter" or "Strang" (default "Lie-Trotter")
+#' @param split_around_fixed_point Logical, whether to split around fixed points (default FALSE)
 #' @param n_sweeps Integer, number of CPF-AS sweeps to run (default 1)
 #' @param ESS_threshold Numeric between 0 and 1, threshold on effective sample size (as a
 #'   fraction of num_particles) below which particles 0..K-2 are resampled (systematic
 #'   resampling) at a given step. The reference particle's ancestor is always resampled via
 #'   ancestor sampling regardless of this threshold. Use 1 to resample at every step.
-#' @param obs_error_params Optional list of length N of per-observation error_params (ARGOS)
+#'   (default 0.8)
+#' @param error_params_per_obs Optional list of length N of per-observation error_params. When
+#'   provided (non-NULL), overrides error_params at each time step, for any error_dist.
+#'   Defaults to \code{NULL}.
 #'
 #' @return List with elements:
 #'   \itemize{
@@ -99,8 +112,8 @@ particle_filter2D_cpp <- function(observations, sde_params, potential_params, er
 #'       resampled in the last sweep
 #'   }
 #' @export
-conditional_particle_filter_cpp <- function(observations, sde_params, potential_params, error_params, error_dist, polygon_coords, U0, lambda, num_particles, scheme, split_around_fixed_point, proposal_weight, reference_trajectory, n_sweeps, ESS_threshold, obs_error_params) {
-    .Call(`_LangevinAnimalTracking_conditional_particle_filter_cpp`, observations, sde_params, potential_params, error_params, error_dist, polygon_coords, U0, lambda, num_particles, scheme, split_around_fixed_point, proposal_weight, reference_trajectory, n_sweeps, ESS_threshold, obs_error_params)
+conditional_particle_filter_cpp <- function(observations, sde_params, polygon_coords, U0, lambda, num_particles, reference_trajectory, potential_params = NULL, error_params = NULL, error_dist = "normal", scheme = "Lie-Trotter", split_around_fixed_point = FALSE, n_sweeps = 1L, ESS_threshold = 0.8, error_params_per_obs = NULL) {
+    .Call(`_LangevinAnimalTracking_conditional_particle_filter_cpp`, observations, sde_params, polygon_coords, U0, lambda, num_particles, reference_trajectory, potential_params, error_params, error_dist, scheme, split_around_fixed_point, n_sweeps, ESS_threshold, error_params_per_obs)
 }
 
 #' Compute exact covariance matrix for Ornstein-Uhlenbeck process (C++ version)
@@ -194,8 +207,6 @@ log_dmvnorm_chol_cpp <- function(x, mean, cholSigma) {
 #' @param mean1 Numeric vector of length \eqn{n}. Mean of the first Gaussian.
 #' @param mean2 Numeric vector of length \eqn{q}. Mean of the second Gaussian.
 #' @param M Link matrix of dimension \eqn{q \times n} that maps the state space.
-#' @param proposal_weight Scalar between 0 and 1 to attribute weight to 
-#' the first gaussian. Value 0.5 means equal weight for both gaussians.
 #'
 #' @return A list with components:
 #' \describe{
@@ -206,8 +217,8 @@ log_dmvnorm_chol_cpp <- function(x, mean, cholSigma) {
 #' }
 #'
 #' @export
-product_gaussian_cpp <- function(P1, P2, mean1, mean2, M, proposal_weight) {
-    .Call(`_LangevinAnimalTracking_product_gaussian_cpp`, P1, P2, mean1, mean2, M, proposal_weight)
+product_gaussian_cpp <- function(P1, P2, mean1, mean2, M) {
+    .Call(`_LangevinAnimalTracking_product_gaussian_cpp`, P1, P2, mean1, mean2, M)
 }
 
 chol_cpp <- function(Q) {

@@ -333,6 +333,13 @@ choose_center <- function(x, x_star, params) {
 #'   \code{data}
 #' @param alpha_init Initial mixture weight assigned to every cluster found.
 #'   Defaults to 0
+#' @param min_size Minimum number of points a HDBSCAN cluster must contain to
+#'   be kept as a well; smaller clusters are treated as noise (grouped with
+#'   HDBSCAN's own noise label) rather than becoming a potential well.
+#'   Defaults to 1 (no filtering beyond HDBSCAN's own noise detection). Use
+#'   this to drop small, spurious-looking clusters (e.g. brief stopovers)
+#'   whose few points would otherwise give an unreliable per-well
+#'   covariance/alpha estimate
 #' @param verbose logical. If TRUE (default), report the number of clusters found
 #'
 #' @return A list with elements \code{x_star} (J x 2 matrix of cluster
@@ -341,7 +348,7 @@ choose_center <- function(x, x_star, params) {
 #' @export
 init_potential_params_hdbscan <- function(data, coords = c("Y1", "Y2"),
                                            minPts = NULL, alpha_init = 0,
-                                           verbose = TRUE) {
+                                           min_size = 1, verbose = TRUE) {
 
   if (!requireNamespace("dbscan", quietly = TRUE)) {
     stop("Package 'dbscan' is required for init_potential_params_hdbscan().")
@@ -354,16 +361,25 @@ init_potential_params_hdbscan <- function(data, coords = c("Y1", "Y2"),
   }
 
   hdb            <- dbscan::hdbscan(coords_all, minPts = minPts)
-  cluster_labels <- sort(unique(hdb$cluster[hdb$cluster != 0]))
+  cluster_sizes  <- table(hdb$cluster[hdb$cluster != 0])
+  cluster_labels <- sort(as.integer(names(cluster_sizes[cluster_sizes >= min_size])))
   J              <- length(cluster_labels)
 
   if (J == 0) {
     stop("HDBSCAN found no clusters (only noise) with minPts = ", minPts,
-         ". Try lowering minPts.")
+         " and min_size = ", min_size,
+         ". Try lowering minPts or min_size.")
   }
 
   if (verbose) {
-    message("HDBSCAN found ", J, " cluster(s) (excluding noise) for initial potential wells")
+    n_found <- length(cluster_sizes)
+    if (J < n_found) {
+      message("HDBSCAN found ", n_found, " cluster(s), keeping ", J,
+              " with >= ", min_size, " points as initial potential wells; ",
+              n_found - J, " smaller cluster(s) treated as noise")
+    } else {
+      message("HDBSCAN found ", J, " cluster(s) (excluding noise) for initial potential wells")
+    }
   }
 
   x_star <- do.call(rbind, lapply(cluster_labels, function(cl) {

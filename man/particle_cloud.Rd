@@ -12,9 +12,9 @@ particle_cloud(t0, data, particles, weights, polygon = NULL)
 
 \item{data}{data frame of observations with columns Y1 and Y2}
 
-\item{particles}{array of particles as returned by \code{particle_filter2D}}
+\item{particles}{array of particles as returned by \code{particle_filter2D_cpp}}
 
-\item{weights}{matrix of particle weights as returned by \code{particle_filter2D}}
+\item{weights}{matrix of particle weights as returned by \code{particle_filter2D_cpp}}
 
 \item{polygon}{SpatialPolygons object defining the boundary (from `sp` package`)}
 }

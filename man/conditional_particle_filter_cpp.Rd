@@ -7,32 +7,25 @@
 conditional_particle_filter_cpp(
   observations,
   sde_params,
-  potential_params,
-  error_params,
-  error_dist,
   polygon_coords,
   U0,
   lambda,
   num_particles,
-  scheme,
-  split_around_fixed_point,
-  proposal_weight,
   reference_trajectory,
-  n_sweeps,
-  ESS_threshold,
-  obs_error_params
+  potential_params = NULL,
+  error_params = NULL,
+  error_dist = "normal",
+  scheme = "Lie-Trotter",
+  split_around_fixed_point = FALSE,
+  n_sweeps = 1L,
+  ESS_threshold = 0.8,
+  error_params_per_obs = NULL
 )
 }
 \arguments{
 \item{observations}{Matrix with dimensions N x 3: time, Y1, Y2}
 
 \item{sde_params}{List with elements: tau, nu, omega}
-
-\item{potential_params}{List with elements: alpha, B, x_star}
-
-\item{error_params}{List of parameters for the measurement error distribution}
-
-\item{error_dist}{String specifying error distribution: "normal", "scaled_t", or "argos"}
 
 \item{polygon_coords}{Matrix of polygon boundary coordinates (N x 2)}
 
@@ -42,22 +35,33 @@ conditional_particle_filter_cpp(
 
 \item{num_particles}{Integer, number of particles K (K-1 propagated + 1 reference)}
 
-\item{scheme}{String, splitting scheme: "Lie-Trotter" or "Strang"}
-
-\item{split_around_fixed_point}{Logical, whether to split around fixed points}
-
-\item{proposal_weight}{Numeric between 0 and 1, weight for the Gaussian proposal}
-
 \item{reference_trajectory}{Matrix (N x 4) giving the initial conditioning trajectory}
+
+\item{potential_params}{List with elements: alpha, B, x_star. Defaults to \code{NULL}, in
+which case the potential is set to zero everywhere (unpenalized free movement).}
+
+\item{error_params}{List of parameters for the measurement error distribution. Defaults to
+\code{NULL}. May be left \code{NULL} only if \code{error_params_per_obs} is supplied instead
+(per-observation error parameters); at least one of the two is required.}
+
+\item{error_dist}{String specifying error distribution: "normal", "scaled_t", or "argos"
+(default "normal")}
+
+\item{scheme}{String, splitting scheme: "Lie-Trotter" or "Strang" (default "Lie-Trotter")}
+
+\item{split_around_fixed_point}{Logical, whether to split around fixed points (default FALSE)}
 
 \item{n_sweeps}{Integer, number of CPF-AS sweeps to run (default 1)}
 
 \item{ESS_threshold}{Numeric between 0 and 1, threshold on effective sample size (as a
 fraction of num_particles) below which particles 0..K-2 are resampled (systematic
 resampling) at a given step. The reference particle's ancestor is always resampled via
-ancestor sampling regardless of this threshold. Use 1 to resample at every step.}
+ancestor sampling regardless of this threshold. Use 1 to resample at every step.
+(default 0.8)}
 
-\item{obs_error_params}{Optional list of length N of per-observation error_params (ARGOS)}
+\item{error_params_per_obs}{Optional list of length N of per-observation error_params. When
+provided (non-NULL), overrides error_params at each time step, for any error_dist.
+Defaults to \code{NULL}.}
 }
 \value{
 List with elements:

@@ -1,4 +1,3 @@
-#include "particle_filter.h"
 #include "sde.h"
 #include "ode.h"
 #include "utility.h"
@@ -38,7 +37,6 @@ static inline arma::vec propagate_particle_with_cache(
     bool use_precomputed_LQ,
     const arma::mat& L_precomputed,
     const arma::mat& Q_precomputed,
-    double proposal_weight,
     ParticleIntermediate& cache  // OUTPUT: cached values
 ) {
   
@@ -90,33 +88,33 @@ static inline arma::vec propagate_particle_with_cache(
       double scale = error_params["scale"];
       double df = error_params["df"];
       cache.gaussian_proposal = product_gaussian_cpp(cache.invQ, ((df-2)/df)/(scale*scale)*I2,
-                                                      cache.mean, y, M, proposal_weight);
+                                                      cache.mean, y, M);
     } else if (error_dist == "normal") {
       double sigma_obs = error_params["sigma_obs"];
       cache.gaussian_proposal = product_gaussian_cpp(cache.invQ, 1/(sigma_obs*sigma_obs)*I2,
-                                                      cache.mean, y, M, proposal_weight);
+                                                      cache.mean, y, M);
     } else if (error_dist == "argos") {
       double df = error_params["df"];
       double sigma_obs = error_params["sigma_obs"];
       double rho = error_params["rho"];
       double a = error_params["a"];
       double p = error_params["p"];
-      
+
       arma::mat Sigma1 = sigma_obs*sigma_obs * arma::mat{{1, rho*sqrt(a)}, {rho*sqrt(a), 1}};
       arma::mat Sigma2 = sigma_obs*sigma_obs * arma::mat{{1, -rho*sqrt(a)}, {-rho*sqrt(a), 1}};
       arma::mat S1 = df/(df-2) * Sigma1;
       arma::mat S2 = df/(df-2) * Sigma2;
-      
+
       arma::mat invS1 = arma::inv(S1);
       arma::mat invS2 = arma::inv(S2);
-      
+
       double u = R::runif(0.0, 1.0);
       arma::mat invS = (u < p) ? invS1 : invS2;
-      
-      cache.gaussian_proposal = product_gaussian_cpp(cache.invQ, invS, cache.mean, y, M, proposal_weight);
+
+      cache.gaussian_proposal = product_gaussian_cpp(cache.invQ, invS, cache.mean, y, M);
     }
     global_timer.record("prop_proposal");
-    
+
     // Sample from cached 4D proposal
     arma::vec z = arma::randn<arma::vec>(4);
     U_next = as<arma::vec>(cache.gaussian_proposal["mean"]) +
@@ -179,31 +177,31 @@ static inline arma::vec propagate_particle_with_cache(
       double scale = error_params["scale"];
       double df = error_params["df"];
       cache.gaussian_proposal = product_gaussian_cpp(cache.invQxx, ((df-2)/df)/(scale*scale)*I2,
-                                                      cache.mean.subvec(0,1), y, I2, proposal_weight);
+                                                      cache.mean.subvec(0,1), y, I2);
     } else if (error_dist == "normal") {
       double sigma_obs = error_params["sigma_obs"];
       cache.gaussian_proposal = product_gaussian_cpp(cache.invQxx, 1/(sigma_obs*sigma_obs)*I2,
-                                                      cache.mean.subvec(0,1), y, I2, proposal_weight);
+                                                      cache.mean.subvec(0,1), y, I2);
     } else if (error_dist == "argos") {
       double df = error_params["df"];
       double sigma_obs = error_params["sigma_obs"];
       double rho = error_params["rho"];
       double a = error_params["a"];
       double p = error_params["p"];
-      
+
       arma::mat Sigma1 = sigma_obs*sigma_obs * arma::mat{{1, rho*sqrt(a)}, {rho*sqrt(a), 1}};
       arma::mat Sigma2 = sigma_obs*sigma_obs * arma::mat{{1, -rho*sqrt(a)}, {-rho*sqrt(a), 1}};
       arma::mat S1 = df/(df-2) * Sigma1;
       arma::mat S2 = df/(df-2) * Sigma2;
-      
+
       arma::mat invS1 = arma::inv(S1);
       arma::mat invS2 = arma::inv(S2);
-      
+
       double u = R::runif(0.0, 1.0);
       arma::mat invS = (u < p) ? invS1 : invS2;
-      
+
       cache.gaussian_proposal = product_gaussian_cpp(cache.invQxx, invS,
-                                                      cache.mean.subvec(0,1), y, I2, proposal_weight);
+                                                      cache.mean.subvec(0,1), y, I2);
     }
     global_timer.record("prop_proposal");
     
@@ -259,7 +257,6 @@ static inline double compute_weight_from_cache(
     const arma::mat& M,
     const std::string& error_dist,
     const std::string& scheme,
-    double proposal_weight,
     // Precomputed error parameters
     double sigma_obs,
     double scale,
@@ -306,9 +303,9 @@ static inline double compute_weight_from_cache(
     } else if (error_dist == "argos") {
       // For argos, still needed to compute proposals (different random draw in weight computation)
       List gaussian_proposal1 = product_gaussian_cpp(cache.invQ, invS_argos1,
-                                                     cache.mean, y, M, proposal_weight);
+                                                     cache.mean, y, M);
       List gaussian_proposal2 = product_gaussian_cpp(cache.invQ, invS_argos2,
-                                                     cache.mean, y, M, proposal_weight);
+                                                     cache.mean, y, M);
       global_timer.record("weight_proposal");
       
       List error_params_local = List::create(
@@ -357,9 +354,9 @@ static inline double compute_weight_from_cache(
     } else if (error_dist == "argos") {
       // For argos, compute 2D proposals
       List gaussian_proposal1 = product_gaussian_cpp(cache.invQxx, invS_argos1,
-                                                     cache.mean.subvec(0,1), y, I2, proposal_weight);
+                                                     cache.mean.subvec(0,1), y, I2);
       List gaussian_proposal2 = product_gaussian_cpp(cache.invQxx, invS_argos2,
-                                                     cache.mean.subvec(0,1), y, I2, proposal_weight);
+                                                     cache.mean.subvec(0,1), y, I2);
       global_timer.record("weight_proposal");
       
       List error_params_local = List::create(
@@ -390,36 +387,43 @@ static inline double compute_weight_from_cache(
 
 //' Run particle filter algorithm for the Langevin diffusion with specified measurement errors
 //' and splitting schemes
-//' 
+//'
 //' @param observations Matrix with dimensions N x 3: time, Y1, Y2
 //' @param sde_params List with elements: tau (persistence), nu (velocity scale), omega (rotation)
+//' @param polygon_coords Matrix of polygon boundary coordinates (N x 2)
+//' @param U0 Numeric vector of initial state (length 4: position and velocity)
+//' @param lambda Numeric, penalization parameter (positive number, Inf for no penalization)
+//' @param num_particles Integer, number of particles to use in the filter
 //' @param potential_params List with elements:
 //'   \itemize{
 //'     \item alpha: Numeric vector of mixture weights
 //'     \item B: List of precision matrices
 //'     \item x_star: Matrix of fixed point coordinates
 //'   }
+//'   Defaults to \code{NULL}, in which case the potential is set to zero everywhere
+//'   (unpenalized free movement, no attraction to any point).
 //' @param error_params List of parameters for the measurement error distribution (contents depend on error_dist):
 //'   \itemize{
 //'     \item For "normal": sigma_obs (observation error standard deviation)
 //'     \item For "scaled_t": scale and df (degrees of freedom)
 //'     \item For "argos": sigma_obs, df, rho, a, p
 //'   }
+//'   Defaults to \code{NULL}. May be left \code{NULL} only if \code{error_params_per_obs} is
+//'   supplied instead (per-observation error parameters); at least one of the two is
+//'   required.
 //' @param error_dist String specifying error distribution: "normal", "scaled_t", or "argos"
-//' @param polygon_coords Matrix of polygon boundary coordinates (N x 2)
-//' @param U0 Numeric vector of initial state (length 4: position and velocity)
-//' @param lambda Numeric, penalization parameter (positive number, Inf for no penalization)
-//' @param num_particles Integer, number of particles to use in the filter
-//' @param scheme String, splitting scheme: "Lie-Trotter" or "Strang"
-//' @param split_around_fixed_point Logical, whether to split around fixed points
-//' @param ESS_threshold Numeric between 0 and 1, threshold on effective sample size for resampling
-//' @param proposal_weight Numeric between 0 and 1, weight attributed to the previous state in the Gaussian proposal
-//' @param verbose Logical, whether to print progress messages
-//' @param print_timing Logical, whether to print profiling timing results (default: FALSE)
-//' @param obs_error_params Optional list of length N, where each element is an error_params
+//'   (default "normal")
+//' @param scheme String, splitting scheme: "Lie-Trotter" or "Strang" (default "Lie-Trotter")
+//' @param split_around_fixed_point Logical, whether to split around fixed points (default FALSE)
+//' @param ESS_threshold Numeric between 0 and 1, threshold on effective sample size for
+//'   resampling (default 0.8)
+//' @param verbose Logical, whether to print progress messages (default FALSE)
+//' @param print_timing Logical, whether to print profiling timing results (default FALSE)
+//' @param error_params_per_obs Optional list of length N, where each element is an error_params
 //'   list for the corresponding observation. When provided (non-NULL), overrides error_params
-//'   at each time step. Useful for ARGOS data where location class varies per observation.
-//' 
+//'   at each time step, for any error_dist (e.g. useful for ARGOS data where the location
+//'   class, and hence the error parameters, varies per observation). Defaults to \code{NULL}.
+//'
 //' @return List with elements:
 //'   \itemize{
 //'     \item particles: Array of particles (num_particles x 4 x N)
@@ -439,20 +443,19 @@ static inline double compute_weight_from_cache(
 List particle_filter2D_cpp(
     const arma::mat& observations,
     const List& sde_params,
-    const List& potential_params,
-    const List& error_params,
-    const std::string& error_dist,
     const arma::mat& polygon_coords,
     const arma::vec& U0,
     double lambda,
     int num_particles,
-    const std::string& scheme,              
-    bool split_around_fixed_point,
-    double ESS_threshold,
-    double proposal_weight,
-    bool verbose,
-    bool print_timing,
-    Nullable<List> obs_error_params
+    Nullable<List> potential_params = R_NilValue,
+    Nullable<List> error_params = R_NilValue,
+    std::string error_dist = "normal",
+    std::string scheme = "Lie-Trotter",
+    bool split_around_fixed_point = false,
+    double ESS_threshold = 0.8,
+    bool verbose = false,
+    bool print_timing = false,
+    Nullable<List> error_params_per_obs = R_NilValue
 ) {
   
   // Initialize timing
@@ -472,10 +475,22 @@ List particle_filter2D_cpp(
   arma::mat I2 = arma::eye<arma::mat>(2, 2);
   arma::mat M = arma::join_horiz(I2, arma::zeros<arma::mat>(2, 2));
   
-  // Extract potential parameters if provided
-  arma::vec alpha = potential_params["alpha"];
-  List B_list = potential_params["B"];
-  arma::mat x_star = potential_params["x_star"];
+  // Resolve potential_params: NULL means "no potential" (zero everywhere), encoded as a
+  // single mixture component with zero weight so downstream code is unchanged.
+  List potential_params_resolved;
+  if (potential_params.isNull()) {
+    potential_params_resolved = List::create(
+      Named("x_star") = arma::mat{{0.0, 0.0}},
+      Named("B")      = List::create(arma::eye<arma::mat>(2, 2)),
+      Named("alpha")  = arma::vec{0.0}
+    );
+  } else {
+    potential_params_resolved = as<List>(potential_params);
+  }
+
+  arma::vec alpha = potential_params_resolved["alpha"];
+  List B_list = potential_params_resolved["B"];
+  arma::mat x_star = potential_params_resolved["x_star"];
   
   // Initialize output arrays
   arma::cube particles(num_particles, num_states, N);
@@ -536,49 +551,63 @@ List particle_filter2D_cpp(
   
   global_timer.record("precompute_LQ");
   
-  // Precompute error distribution parameters to avoid repeated extraction
+  // Resolve error_params / error_params_per_obs. At least one is required: error_params may be
+  // NULL only when error_params_per_obs supplies per-observation error parameters instead.
+  bool has_error_params = error_params.isNotNull();
+  bool has_error_params_per_obs = error_params_per_obs.isNotNull();
+  if (!has_error_params && !has_error_params_per_obs) {
+    Rcpp::stop("Either error_params or error_params_per_obs must be provided.");
+  }
+
+  List error_params_resolved;
+  if (has_error_params) {
+    error_params_resolved = as<List>(error_params);
+  }
+
+  List error_params_per_obs_list;
+  if (has_error_params_per_obs) {
+    error_params_per_obs_list = as<List>(error_params_per_obs);
+    if ((int)error_params_per_obs_list.size() != N) {
+      Rcpp::stop("error_params_per_obs must have length equal to the number of observations (%d)", N);
+    }
+  }
+
+  // Precompute error distribution parameters to avoid repeated extraction. Skipped when
+  // error_params is NULL, since error_params_per_obs then covers every time step below.
   double sigma_obs = 0.0;
   double scale = 0.0, df = 0.0;
   double rho = 0.0, a = 0.0, p_argos = 0.0;
   arma::mat invS_argos1, invS_argos2;
   double log_p_argos = 0.0, log_1mp_argos = 0.0;
-  
-  if (error_dist == "normal") {
-    sigma_obs = as<double>(error_params["sigma_obs"]);
-  } else if (error_dist == "scaled_t") {
-    scale = as<double>(error_params["scale"]);
-    df = as<double>(error_params["df"]);
-  } else if (error_dist == "argos") {
-    df = as<double>(error_params["df"]);
-    sigma_obs = as<double>(error_params["sigma_obs"]);
-    rho = as<double>(error_params["rho"]);
-    a = as<double>(error_params["a"]);
-    p_argos = as<double>(error_params["p"]);
-    
-    // Precompute inverse covariance matrices
-    arma::mat Sigma1 = sigma_obs*sigma_obs * arma::mat{{1, rho*std::sqrt(a)},
-                                                       {rho*std::sqrt(a), 1}};
-    arma::mat Sigma2 = sigma_obs*sigma_obs * arma::mat{{1, -rho*std::sqrt(a)},
-                                                       {-rho*std::sqrt(a), 1}};
-    arma::mat S1 = df/(df-2.0) * Sigma1;
-    arma::mat S2 = df/(df-2.0) * Sigma2;
-    
-    invS_argos1 = arma::inv(S1);
-    invS_argos2 = arma::inv(S2);
-    log_p_argos = std::log(p_argos);
-    log_1mp_argos = std::log(1.0 - p_argos);
-  }
-  
-  // Unpack obs_error_params if provided (for time-varying error params, e.g. ARGOS classes)
-  bool has_obs_error_params = obs_error_params.isNotNull();
-  List obs_ep_list;
-  if (has_obs_error_params) {
-    obs_ep_list = as<List>(obs_error_params);
-    if ((int)obs_ep_list.size() != N) {
-      Rcpp::stop("obs_error_params must have length equal to the number of observations (%d)", N);
+
+  if (has_error_params) {
+    if (error_dist == "normal") {
+      sigma_obs = as<double>(error_params_resolved["sigma_obs"]);
+    } else if (error_dist == "scaled_t") {
+      scale = as<double>(error_params_resolved["scale"]);
+      df = as<double>(error_params_resolved["df"]);
+    } else if (error_dist == "argos") {
+      df = as<double>(error_params_resolved["df"]);
+      sigma_obs = as<double>(error_params_resolved["sigma_obs"]);
+      rho = as<double>(error_params_resolved["rho"]);
+      a = as<double>(error_params_resolved["a"]);
+      p_argos = as<double>(error_params_resolved["p"]);
+
+      // Precompute inverse covariance matrices
+      arma::mat Sigma1 = sigma_obs*sigma_obs * arma::mat{{1, rho*std::sqrt(a)},
+                                                         {rho*std::sqrt(a), 1}};
+      arma::mat Sigma2 = sigma_obs*sigma_obs * arma::mat{{1, -rho*std::sqrt(a)},
+                                                         {-rho*std::sqrt(a), 1}};
+      arma::mat S1 = df/(df-2.0) * Sigma1;
+      arma::mat S2 = df/(df-2.0) * Sigma2;
+
+      invS_argos1 = arma::inv(S1);
+      invS_argos2 = arma::inv(S2);
+      log_p_argos = std::log(p_argos);
+      log_1mp_argos = std::log(1.0 - p_argos);
     }
   }
-  
+
   // Main particle filter loop
   for (int j = 0; j < N - 1; ++j) {
     
@@ -600,27 +629,38 @@ List particle_filter2D_cpp(
     double step_log_1mp     = log_1mp_argos;
     arma::mat step_invS1    = invS_argos1;
     arma::mat step_invS2    = invS_argos2;
-    List step_error_params  = error_params;   // used by propagate_particle_with_cache
-    
-    if (has_obs_error_params && error_dist == "argos") {
-      // obs_error_params is indexed by observation (j+1 is the obs used at step j)
-      step_error_params = as<List>(obs_ep_list[j + 1]);
-      step_df          = as<double>(step_error_params["df"]);
-      step_sigma_obs   = as<double>(step_error_params["sigma_obs"]);
-      step_rho         = as<double>(step_error_params["rho"]);
-      step_a           = as<double>(step_error_params["a"]);
-      double step_p    = as<double>(step_error_params["p"]);
-      step_log_p       = std::log(step_p);
-      step_log_1mp     = std::log(1.0 - step_p);
-      
-      arma::mat Sigma1 = step_sigma_obs*step_sigma_obs *
-                         arma::mat{{1, step_rho*std::sqrt(step_a)},
-                                   {step_rho*std::sqrt(step_a), 1}};
-      arma::mat Sigma2 = step_sigma_obs*step_sigma_obs *
-                         arma::mat{{1, -step_rho*std::sqrt(step_a)},
-                                   {-step_rho*std::sqrt(step_a), 1}};
-      step_invS1 = arma::inv(step_df/(step_df-2.0) * Sigma1);
-      step_invS2 = arma::inv(step_df/(step_df-2.0) * Sigma2);
+    // used by propagate_particle_with_cache; empty when error_params is NULL, which is
+    // only allowed when has_error_params_per_obs is TRUE, i.e. always overridden just below
+    List step_error_params  = has_error_params ? error_params_resolved : List();
+
+    if (has_error_params_per_obs) {
+      // error_params_per_obs is indexed by observation (j+1 is the obs used at step j), and
+      // now works for any error_dist, not just "argos"
+      step_error_params = as<List>(error_params_per_obs_list[j + 1]);
+
+      if (error_dist == "normal") {
+        step_sigma_obs = as<double>(step_error_params["sigma_obs"]);
+      } else if (error_dist == "scaled_t") {
+        step_scale = as<double>(step_error_params["scale"]);
+        step_df    = as<double>(step_error_params["df"]);
+      } else if (error_dist == "argos") {
+        step_df          = as<double>(step_error_params["df"]);
+        step_sigma_obs   = as<double>(step_error_params["sigma_obs"]);
+        step_rho         = as<double>(step_error_params["rho"]);
+        step_a           = as<double>(step_error_params["a"]);
+        double step_p    = as<double>(step_error_params["p"]);
+        step_log_p       = std::log(step_p);
+        step_log_1mp     = std::log(1.0 - step_p);
+
+        arma::mat Sigma1 = step_sigma_obs*step_sigma_obs *
+                           arma::mat{{1, step_rho*std::sqrt(step_a)},
+                                     {step_rho*std::sqrt(step_a), 1}};
+        arma::mat Sigma2 = step_sigma_obs*step_sigma_obs *
+                           arma::mat{{1, -step_rho*std::sqrt(step_a)},
+                                     {-step_rho*std::sqrt(step_a), 1}};
+        step_invS1 = arma::inv(step_df/(step_df-2.0) * Sigma1);
+        step_invS2 = arma::inv(step_df/(step_df-2.0) * Sigma2);
+      }
     }
     
     // --- PREDICTION STEP ---
@@ -641,7 +681,7 @@ List particle_filter2D_cpp(
       ind_fixed_point_vec = choose_center_matrix_cpp(
         X_positions,
         x_star,
-        potential_params
+        potential_params_resolved
       );
       ind_fixed_point_mat.col(j) = ind_fixed_point_vec;
       global_timer.record("choose_centers");
@@ -664,10 +704,9 @@ List particle_filter2D_cpp(
       // Propagate particle 
       arma::vec U_next = propagate_particle_with_cache(
         U_prev, y, M, delta, push,
-        potential_params, tau, nu, omega, lambda,
+        potential_params_resolved, tau, nu, omega, lambda,
         error_dist, step_error_params, scheme, polygon_coords,
         ind_fp, use_precomputed_LQ, L_precomputed, Q_precomputed,
-        proposal_weight,
         particle_cache[k]);
       
       particles.slice(j + 1).row(k) = U_next.t();
@@ -694,9 +733,9 @@ List particle_filter2D_cpp(
       double incremental = compute_weight_from_cache(
         U_pred, y, M,
         error_dist, scheme,
-        proposal_weight, step_sigma_obs, step_scale, step_df,
+        step_sigma_obs, step_scale, step_df,
         step_invS1, step_invS2, step_log_p, step_log_1mp, step_a, step_rho,
-        particle_cache[k]); 
+        particle_cache[k]);
 
       weights(k, j + 1) = weights(k, j) * incremental;
      }
@@ -884,11 +923,11 @@ static arma::mat run_cpf_as_sweep(
     int K,
     const std::string& scheme,
     bool split_around_fixed_point,
-    double proposal_weight,
     double ESS_threshold,
     const arma::mat& ref_traj,
-    bool has_obs_error_params,
-    const List& obs_ep_list,
+    bool has_error_params,
+    bool has_error_params_per_obs,
+    const List& error_params_per_obs_list,
     arma::vec& ess_history_out,
     LogicalVector& resampled_at_out
 ) {
@@ -920,24 +959,27 @@ static arma::mat run_cpf_as_sweep(
   arma::mat invS_argos1, invS_argos2;
   double log_p_argos = 0.0, log_1mp_argos = 0.0;
 
-  if (error_dist == "normal") {
-    sigma_obs = as<double>(error_params["sigma_obs"]);
-  } else if (error_dist == "scaled_t") {
-    scale = as<double>(error_params["scale"]);
-    df = as<double>(error_params["df"]);
-  } else if (error_dist == "argos") {
-    df = as<double>(error_params["df"]);
-    sigma_obs = as<double>(error_params["sigma_obs"]);
-    rho = as<double>(error_params["rho"]);
-    a = as<double>(error_params["a"]);
-    p_argos = as<double>(error_params["p"]);
+  // Skipped when error_params is NULL, since error_params_per_obs then covers every time step
+  if (has_error_params) {
+    if (error_dist == "normal") {
+      sigma_obs = as<double>(error_params["sigma_obs"]);
+    } else if (error_dist == "scaled_t") {
+      scale = as<double>(error_params["scale"]);
+      df = as<double>(error_params["df"]);
+    } else if (error_dist == "argos") {
+      df = as<double>(error_params["df"]);
+      sigma_obs = as<double>(error_params["sigma_obs"]);
+      rho = as<double>(error_params["rho"]);
+      a = as<double>(error_params["a"]);
+      p_argos = as<double>(error_params["p"]);
 
-    arma::mat Sigma1 = sigma_obs*sigma_obs * arma::mat{{1, rho*std::sqrt(a)}, {rho*std::sqrt(a), 1}};
-    arma::mat Sigma2 = sigma_obs*sigma_obs * arma::mat{{1, -rho*std::sqrt(a)}, {-rho*std::sqrt(a), 1}};
-    invS_argos1 = arma::inv(df/(df-2.0) * Sigma1);
-    invS_argos2 = arma::inv(df/(df-2.0) * Sigma2);
-    log_p_argos = std::log(p_argos);
-    log_1mp_argos = std::log(1.0 - p_argos);
+      arma::mat Sigma1 = sigma_obs*sigma_obs * arma::mat{{1, rho*std::sqrt(a)}, {rho*std::sqrt(a), 1}};
+      arma::mat Sigma2 = sigma_obs*sigma_obs * arma::mat{{1, -rho*std::sqrt(a)}, {-rho*std::sqrt(a), 1}};
+      invS_argos1 = arma::inv(df/(df-2.0) * Sigma1);
+      invS_argos2 = arma::inv(df/(df-2.0) * Sigma2);
+      log_p_argos = std::log(p_argos);
+      log_1mp_argos = std::log(1.0 - p_argos);
+    }
   }
 
   arma::cube particles(K, num_states, N);
@@ -962,22 +1004,33 @@ static arma::mat run_cpf_as_sweep(
     double step_sigma_obs = sigma_obs, step_scale = scale, step_df = df, step_rho = rho, step_a = a;
     double step_log_p = log_p_argos, step_log_1mp = log_1mp_argos;
     arma::mat step_invS1 = invS_argos1, step_invS2 = invS_argos2;
-    List step_error_params = error_params;
+    // empty when error_params is NULL, which is only allowed when has_error_params_per_obs is
+    // TRUE, i.e. always overridden just below
+    List step_error_params = has_error_params ? error_params : List();
 
-    if (has_obs_error_params && error_dist == "argos") {
-      step_error_params = as<List>(obs_ep_list[j + 1]);
-      step_df = as<double>(step_error_params["df"]);
-      step_sigma_obs = as<double>(step_error_params["sigma_obs"]);
-      step_rho = as<double>(step_error_params["rho"]);
-      step_a = as<double>(step_error_params["a"]);
-      double step_p = as<double>(step_error_params["p"]);
-      step_log_p = std::log(step_p);
-      step_log_1mp = std::log(1.0 - step_p);
+    if (has_error_params_per_obs) {
+      // works for any error_dist, not just "argos"
+      step_error_params = as<List>(error_params_per_obs_list[j + 1]);
 
-      arma::mat Sigma1 = step_sigma_obs*step_sigma_obs * arma::mat{{1, step_rho*std::sqrt(step_a)}, {step_rho*std::sqrt(step_a), 1}};
-      arma::mat Sigma2 = step_sigma_obs*step_sigma_obs * arma::mat{{1, -step_rho*std::sqrt(step_a)}, {-step_rho*std::sqrt(step_a), 1}};
-      step_invS1 = arma::inv(step_df/(step_df-2.0) * Sigma1);
-      step_invS2 = arma::inv(step_df/(step_df-2.0) * Sigma2);
+      if (error_dist == "normal") {
+        step_sigma_obs = as<double>(step_error_params["sigma_obs"]);
+      } else if (error_dist == "scaled_t") {
+        step_scale = as<double>(step_error_params["scale"]);
+        step_df    = as<double>(step_error_params["df"]);
+      } else if (error_dist == "argos") {
+        step_df = as<double>(step_error_params["df"]);
+        step_sigma_obs = as<double>(step_error_params["sigma_obs"]);
+        step_rho = as<double>(step_error_params["rho"]);
+        step_a = as<double>(step_error_params["a"]);
+        double step_p = as<double>(step_error_params["p"]);
+        step_log_p = std::log(step_p);
+        step_log_1mp = std::log(1.0 - step_p);
+
+        arma::mat Sigma1 = step_sigma_obs*step_sigma_obs * arma::mat{{1, step_rho*std::sqrt(step_a)}, {step_rho*std::sqrt(step_a), 1}};
+        arma::mat Sigma2 = step_sigma_obs*step_sigma_obs * arma::mat{{1, -step_rho*std::sqrt(step_a)}, {-step_rho*std::sqrt(step_a), 1}};
+        step_invS1 = arma::inv(step_df/(step_df-2.0) * Sigma1);
+        step_invS2 = arma::inv(step_df/(step_df-2.0) * Sigma2);
+      }
     }
 
     arma::mat X_positions = particles.slice(j).cols(0, 1);
@@ -1021,7 +1074,7 @@ static arma::mat run_cpf_as_sweep(
       arma::vec U_next = propagate_particle_with_cache(
         U_prev, y, M, delta, push, potential_params,
         tau, nu, omega, lambda, error_dist, step_error_params, scheme, polygon_coords,
-        ind_fp, use_precomputed_LQ, L_precomputed, Q_precomputed, proposal_weight, cache[k]);
+        ind_fp, use_precomputed_LQ, L_precomputed, Q_precomputed, cache[k]);
 
       particles.slice(j + 1).row(k) = U_next.t();
     }
@@ -1062,7 +1115,7 @@ static arma::mat run_cpf_as_sweep(
       propagate_particle_with_cache(
         U_prev, y, M, delta, push, potential_params,
         tau, nu, omega, lambda, error_dist, step_error_params, scheme, polygon_coords,
-        ind_fp, use_precomputed_LQ, L_precomputed, Q_precomputed, proposal_weight, ref_cache);
+        ind_fp, use_precomputed_LQ, L_precomputed, Q_precomputed, ref_cache);
       cache[K - 1] = ref_cache;
     }
 
@@ -1075,7 +1128,7 @@ static arma::mat run_cpf_as_sweep(
     for (int k = 0; k < K; ++k) {
       arma::vec U_pred = particles.slice(j + 1).row(k).t();
       double incremental = compute_weight_from_cache(
-        U_pred, y, M, error_dist, scheme, proposal_weight,
+        U_pred, y, M, error_dist, scheme,
         step_sigma_obs, step_scale, step_df,
         step_invS1, step_invS2, step_log_p, step_log_1mp, step_a, step_rho,
         cache[k]);
@@ -1119,23 +1172,29 @@ static arma::mat run_cpf_as_sweep(
 //'
 //' @param observations Matrix with dimensions N x 3: time, Y1, Y2
 //' @param sde_params List with elements: tau, nu, omega
-//' @param potential_params List with elements: alpha, B, x_star
-//' @param error_params List of parameters for the measurement error distribution
-//' @param error_dist String specifying error distribution: "normal", "scaled_t", or "argos"
 //' @param polygon_coords Matrix of polygon boundary coordinates (N x 2)
 //' @param U0 Numeric vector of initial state (length 4)
 //' @param lambda Numeric, penalization parameter
 //' @param num_particles Integer, number of particles K (K-1 propagated + 1 reference)
-//' @param scheme String, splitting scheme: "Lie-Trotter" or "Strang"
-//' @param split_around_fixed_point Logical, whether to split around fixed points
-//' @param proposal_weight Numeric between 0 and 1, weight for the Gaussian proposal
 //' @param reference_trajectory Matrix (N x 4) giving the initial conditioning trajectory
+//' @param potential_params List with elements: alpha, B, x_star. Defaults to \code{NULL}, in
+//'   which case the potential is set to zero everywhere (unpenalized free movement).
+//' @param error_params List of parameters for the measurement error distribution. Defaults to
+//'   \code{NULL}. May be left \code{NULL} only if \code{error_params_per_obs} is supplied instead
+//'   (per-observation error parameters); at least one of the two is required.
+//' @param error_dist String specifying error distribution: "normal", "scaled_t", or "argos"
+//'   (default "normal")
+//' @param scheme String, splitting scheme: "Lie-Trotter" or "Strang" (default "Lie-Trotter")
+//' @param split_around_fixed_point Logical, whether to split around fixed points (default FALSE)
 //' @param n_sweeps Integer, number of CPF-AS sweeps to run (default 1)
 //' @param ESS_threshold Numeric between 0 and 1, threshold on effective sample size (as a
 //'   fraction of num_particles) below which particles 0..K-2 are resampled (systematic
 //'   resampling) at a given step. The reference particle's ancestor is always resampled via
 //'   ancestor sampling regardless of this threshold. Use 1 to resample at every step.
-//' @param obs_error_params Optional list of length N of per-observation error_params (ARGOS)
+//'   (default 0.8)
+//' @param error_params_per_obs Optional list of length N of per-observation error_params. When
+//'   provided (non-NULL), overrides error_params at each time step, for any error_dist.
+//'   Defaults to \code{NULL}.
 //'
 //' @return List with elements:
 //'   \itemize{
@@ -1149,29 +1208,53 @@ static arma::mat run_cpf_as_sweep(
 List conditional_particle_filter_cpp(
     const arma::mat& observations,
     const List& sde_params,
-    const List& potential_params,
-    const List& error_params,
-    const std::string& error_dist,
     const arma::mat& polygon_coords,
     const arma::vec& U0,
     double lambda,
     int num_particles,
-    const std::string& scheme,
-    bool split_around_fixed_point,
-    double proposal_weight,
     const arma::mat& reference_trajectory,
-    int n_sweeps,
-    double ESS_threshold,
-    Nullable<List> obs_error_params
+    Nullable<List> potential_params = R_NilValue,
+    Nullable<List> error_params = R_NilValue,
+    std::string error_dist = "normal",
+    std::string scheme = "Lie-Trotter",
+    bool split_around_fixed_point = false,
+    int n_sweeps = 1,
+    double ESS_threshold = 0.8,
+    Nullable<List> error_params_per_obs = R_NilValue
 ) {
   int N = observations.n_rows;
 
-  bool has_obs_error_params = obs_error_params.isNotNull();
-  List obs_ep_list;
-  if (has_obs_error_params) {
-    obs_ep_list = as<List>(obs_error_params);
-    if ((int)obs_ep_list.size() != N) {
-      Rcpp::stop("obs_error_params must have length equal to the number of observations (%d)", N);
+  // Resolve potential_params: NULL means "no potential" (zero everywhere), encoded as a
+  // single mixture component with zero weight so downstream code is unchanged.
+  List potential_params_resolved;
+  if (potential_params.isNull()) {
+    potential_params_resolved = List::create(
+      Named("x_star") = arma::mat{{0.0, 0.0}},
+      Named("B")      = List::create(arma::eye<arma::mat>(2, 2)),
+      Named("alpha")  = arma::vec{0.0}
+    );
+  } else {
+    potential_params_resolved = as<List>(potential_params);
+  }
+
+  // Resolve error_params / error_params_per_obs. At least one is required: error_params may be
+  // NULL only when error_params_per_obs supplies per-observation error parameters instead.
+  bool has_error_params = error_params.isNotNull();
+  bool has_error_params_per_obs = error_params_per_obs.isNotNull();
+  if (!has_error_params && !has_error_params_per_obs) {
+    Rcpp::stop("Either error_params or error_params_per_obs must be provided.");
+  }
+
+  List error_params_resolved;
+  if (has_error_params) {
+    error_params_resolved = as<List>(error_params);
+  }
+
+  List error_params_per_obs_list;
+  if (has_error_params_per_obs) {
+    error_params_per_obs_list = as<List>(error_params_per_obs);
+    if ((int)error_params_per_obs_list.size() != N) {
+      Rcpp::stop("error_params_per_obs must have length equal to the number of observations (%d)", N);
     }
   }
 
@@ -1181,9 +1264,9 @@ List conditional_particle_filter_cpp(
 
   for (int s = 0; s < n_sweeps; ++s) {
     ref = run_cpf_as_sweep(
-      observations, sde_params, potential_params, error_params, error_dist,
+      observations, sde_params, potential_params_resolved, error_params_resolved, error_dist,
       polygon_coords, U0, lambda, num_particles, scheme, split_around_fixed_point,
-      proposal_weight, ESS_threshold, ref, has_obs_error_params, obs_ep_list,
+      ESS_threshold, ref, has_error_params, has_error_params_per_obs, error_params_per_obs_list,
       ess_history, resampled_at);
   }
 

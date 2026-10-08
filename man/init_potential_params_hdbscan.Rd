@@ -9,6 +9,7 @@ init_potential_params_hdbscan(
   coords = c("Y1", "Y2"),
   minPts = NULL,
   alpha_init = 0,
+  min_size = 1,
   verbose = TRUE
 )
 }
@@ -25,6 +26,14 @@ coordinate columns in \code{data} (default \code{c("Y1","Y2")})}
 \item{alpha_init}{Initial mixture weight assigned to every cluster found.
 Defaults to 0}
 
+\item{min_size}{Minimum number of points a HDBSCAN cluster must contain to
+be kept as a well; smaller clusters are treated as noise (grouped with
+HDBSCAN's own noise label) rather than becoming a potential well.
+Defaults to 1 (no filtering beyond HDBSCAN's own noise detection). Use
+this to drop small, spurious-looking clusters (e.g. brief stopovers)
+whose few points would otherwise give an unreliable per-well
+covariance/alpha estimate}
+
 \item{verbose}{logical. If TRUE (default), report the number of clusters found}
 }
 \value{
@@ -38,6 +47,5 @@ the number of attraction zones in advance) and turns each non-noise cluster
 into one attraction well: the cluster centroid becomes \code{x_star_j} and
 the inverse of the cluster's sample covariance becomes the precision matrix
 \code{B_j}. The number of wells \code{J} is however many clusters HDBSCAN
-finds, not fixed in advance. Same approach as in the bowhead whale and
-elephant seal vignettes.
+finds, not fixed in advance.
 }

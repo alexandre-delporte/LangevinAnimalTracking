@@ -36,13 +36,16 @@ will run the particle filter first.}
 
 \item{sde_params}{list with elements tau, nu, omega}
 
-\item{potential_params}{parameters for the potential gradient function}
+\item{potential_params}{parameters for the potential gradient function.
+NULL (default) means no potential, encoded as a single component with zero
+weight, identity precision matrix and centre (0, 0)}
 
 \item{error_params}{parameters for the measurement error distribution}
 
 \item{error_dist}{type of measurement error : "normal", "scaled_t" or "argos"}
 
-\item{polygon}{matrix with two columns defining the vertices of the polygonal domain}
+\item{polygon}{\code{sp::Polygon} object defining the polygonal domain.
+Can be NULL when lambda = Inf (no domain penalisation)}
 
 \item{U0}{initial state (vector of length 4)}
 
@@ -52,7 +55,10 @@ will run the particle filter first.}
 
 \item{scheme}{type of splitting scheme to apply "Lie-Trotter" or "Strang"}
 
-\item{split_around_fixed_point}{logical. If TRUE, split the SDE around the fixed point}
+\item{split_around_fixed_point}{logical. If TRUE, split the SDE around the fixed point.
+This option is still under development: unlike the default naive splitting,
+it does not yet scale the potential gradient and the push by 2*nu^2/pi
+(see solve_ODE), so it uses a different drift than the naive splitting}
 
 \item{ESS_threshold}{threshold for effective sample size to trigger
 resampling in the particle filter}
@@ -60,10 +66,14 @@ resampling in the particle filter}
 \item{verbose}{logical. If TRUE, print information during the computation}
 
 \item{print_timing}{logical. If TRUE, print timing information for each step}
+
+\item{error_params_per_obs}{Optional list of length N of per-observation error
+parameter lists (e.g. from \code{make_argos_obs_params}), passed to
+\code{particle_filter2D_cpp}. Default NULL}
 }
 \value{
 array of dimension (n_samples, num_states, N)
-with the smoothed trajectories7
+with the smoothed trajectories
 }
 \description{
 Forward filtering backward Sampling for penalised Langevin SDE 

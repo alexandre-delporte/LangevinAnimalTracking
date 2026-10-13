@@ -43,7 +43,7 @@
 #'   \code{estimate_centers = FALSE}); and the full potential including
 #'   centres (both \code{TRUE}). Default \code{FALSE}.
 #' @param SGD_iter A positive integer giving the total number of SGD
-#'   iterations to run (across all three phases).
+#'   iterations to run (across all three phases). Default \code{2000}.
 #' @param potential_params A named list of parameters for the mixture of
 #'   Gaussian potential \eqn{H}, with elements:
 #'   \describe{
@@ -52,19 +52,27 @@
 #'     \item{\code{x_star}}{Matrix of attraction centres (one row per
 #'       component).}
 #'   }
+#'   Default \code{NULL} means no potential (\eqn{H \equiv 0}), encoded as a
+#'   single component with zero weight, identity precision matrix and centre
+#'   \eqn{(0, 0)}. Must be provided when
+#'   \code{estimate_potential_params = TRUE}.
 #' @param error_dist A character string specifying the observation error
-#'   distribution (e.g. \code{"gaussian"}, \code{"argos"}).
+#'   distribution: \code{"normal"}, \code{"scaled_t"} or \code{"argos"}.
 #' @param error_params A named list of parameters for the observation error
-#'   distribution (e.g. \code{list(sigma = 0.2)}).
+#'   distribution (e.g. \code{list(sigma_obs = 0.2)} for \code{"normal"}).
+#'   Can be \code{NULL} only when \code{error_params_per_obs} is provided.
 #' @param scheme A character string specifying the numerical splitting scheme
 #'   used to approximate the SDE transition density. Either
 #'   \code{"Lie-Trotter"} (default) or \code{"Strang"}.
-#' @param polygon A \code{SpatialPolygons} object defining the spatial domain
-#'   \eqn{\mathcal{D}} within which animal movement is constrained.
+#' @param polygon An \code{sp::Polygon} object defining the spatial domain
+#'   \eqn{\mathcal{D}} within which animal movement is constrained. Can be
+#'   \code{NULL} (the default) only when \code{lambda = Inf}, i.e. when there
+#'   is no domain penalisation.
 #' @param U0 A numeric vector of length 4 giving the initial state
 #'   \eqn{(x_1, x_2, v_1, v_2)} (position and velocity) at time 0.
 #' @param lambda A positive scalar giving the domain penalisation parameter
-#'   \eqn{\lambda} used in the reflected Langevin push.
+#'   \eqn{\lambda} used in the reflected Langevin push. Default \code{Inf}
+#'   (no penalisation).
 #' @param num_particles A positive integer giving the number of particles
 #'   used in the particle filter at the start of SGD (iteration 1). Used for
 #'   both the forward particle filter/FFBS and the conditional particle
@@ -81,8 +89,10 @@
 #'   \code{num_particles_min}. Default \code{SGD_iter} (decay over the whole
 #'   run).
 #' @param split_around_fixed_point Logical. If \code{TRUE}, the potential is
-#'   split around its fixed point. Currently not implemented and will throw an
-#'   error. Default \code{FALSE}.
+#'   split around its fixed point. This option is still under development:
+#'   the fixed-point splitting does not yet scale the potential gradient and
+#'   the push by \code{2*nu^2/pi} (see \code{solve_ODE}), so it is currently
+#'   not implemented here and will throw an error. Default \code{FALSE}.
 #' @param verbose Logical. If \code{TRUE}, progress messages are printed at
 #'   each iteration including the current learning rate, gradient, Fisher
 #'   matrix eigenvalues, step direction, and updated parameters. Default
@@ -99,9 +109,10 @@
 #'   K_{\text{end-heating}})^{-\alpha_{\text{decay}}}}. Must satisfy \eqn{\alpha_{\text{decay}} > 1/2} to
 #'   ensure \eqn{\sum \gamma_k^2 < \infty}. Default \code{2/3}.
 #' @param C_heating A small positive scalar giving the smoothing constant of
-#'   the 3rd-order exponential mean filter applied to the gradient norm during
-#'   the heating phase. The heating phase ends when the filtered norm stops
-#'     decreasing. The authors recommend \eqn{1/1000}. Default \code{1/1000}.
+#'   the 3rd-order exponential mean filter (three exponential means in
+#'   cascade) applied to the gradient vector during the heating phase. The
+#'   heating phase ends when the norm of the filtered gradient stops
+#'   decreasing. The authors recommend \eqn{1/1000}. Default \code{1/100}.
 #' @param n_smooth_samples A non-negative integer. If greater than 0, the
 #'   smoothed trajectories from the last \code{n_smooth_samples} iterations
 #'   are saved and returned. These can be used to reconstruct plausible latent
@@ -111,8 +122,8 @@
 #'   Passed through to \code{particle_filter2D_cpp} and
 #'   \code{forward_filtering_backward_sampling} at every SGD iteration.
 #'   Only used when \code{error_dist = "argos"}. Default \code{NULL}.
-#' @param smoothing_method A character string, either \code{"FFBS"} (default)
-#'   or \code{"CPF"}. \code{"FFBS"} draws a fresh smoothed trajectory at every
+#' @param smoothing_method A character string, either \code{"FFBS"}
+#'   or \code{"CPF"} (default). \code{"FFBS"} draws a fresh smoothed trajectory at every
 #'   SGD iteration via forward-filtering backward-sampling (\code{\link{forward_filtering_backward_sampling}}).
 #'   \code{"CPF"} instead uses the conditional particle filter with ancestor
 #'   sampling (\code{\link{conditional_particle_filter_cpp}}, Svensson et al.
@@ -154,17 +165,17 @@
 #' }
 #'
 #' @export
-SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
+SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
                        potential_params = NULL, estimate_potential_params = FALSE,
                        estimate_centers = FALSE,
-                       error_dist = NULL, error_params = NULL,
-                       scheme = "Lie-Trotter", polygon, U0, lambda,
+                       error_dist, error_params,
+                       scheme = "Lie-Trotter", polygon = NULL, U0, lambda = Inf,
                        num_particles, num_particles_min = num_particles,
                        num_particles_decay_iter = SGD_iter,
                        split_around_fixed_point = FALSE,
                        verbose = FALSE, gamma0 = 1e-4, K_preheat = 1000,
                        alpha_decay = 2/3, C_heating = 1/100, n_smooth_samples = 0,
-                       error_params_per_obs = NULL, smoothing_method = "FFBS",
+                       error_params_per_obs = NULL, smoothing_method = "CPF",
                        n_sweeps_cpf = 1,
                        init_trajectory = NULL) {
 
@@ -176,7 +187,23 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
     stop("estimate_centers = TRUE requires estimate_potential_params = TRUE")
   }
 
+  if (is.null(potential_params)) {
+    if (estimate_potential_params) {
+      stop("potential_params must be provided when estimate_potential_params = TRUE")
+    }
+    # No potential: single component with zero weight, so H and its gradient
+    # are identically zero
+    potential_params <- list(x_star = matrix(0, 1, 2), B = list(diag(2)), alpha = 0)
+  }
+
   smoothing_method <- match.arg(smoothing_method, c("FFBS", "CPF"))
+
+  if (is.null(polygon) && is.finite(lambda)) {
+    stop("polygon must be provided when lambda is finite")
+  }
+  # Empty coordinate matrix when there is no domain: the push is zero for
+  # lambda = Inf and the coordinates are never read
+  polygon_coords <- if (is.null(polygon)) matrix(numeric(0), 0, 2) else polygon@coords
   ref_traj_cpf <- init_trajectory
 
   x_star    <- potential_params$x_star
@@ -215,10 +242,10 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
   Delta <- matrix(0, ncol = p, nrow = n - 1)
   I_p   <- diag(1, p)
   
-  # Heating phase tracking (3rd-order exponential mean filter on gradient norm)
+  # Heating phase tracking (3rd-order exponential mean filter on gradient vector)
   heating_finished        <- FALSE
   K_end_heating           <- NA
-  grad_norm_history       <- c()
+  grad_filter             <- NULL
   grad_norm_filtered      <- NA
   grad_norm_filtered_prev <- NA
   
@@ -266,7 +293,7 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
         potential_params = potential_params_k,
         error_params     = error_params,
         error_dist       = error_dist,
-        polygon_coords   = polygon@coords,
+        polygon_coords   = polygon_coords,
         U0 = U0, lambda = lambda,
         num_particles    = num_particles_k,
         split_around_fixed_point = split_around_fixed_point,
@@ -299,7 +326,7 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
           potential_params = potential_params_k,
           error_params     = error_params,
           error_dist       = error_dist,
-          polygon_coords   = polygon@coords,
+          polygon_coords   = polygon_coords,
           U0 = U0, lambda = lambda,
           num_particles    = num_particles_k,
           split_around_fixed_point = split_around_fixed_point,
@@ -326,7 +353,7 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
         potential_params = potential_params_k,
         error_params     = error_params,
         error_dist       = error_dist,
-        polygon_coords   = polygon@coords,
+        polygon_coords   = polygon_coords,
         U0 = U0, lambda = lambda,
         num_particles    = num_particles_k,
         scheme = scheme,
@@ -348,7 +375,7 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
 
     for (t in 1:n) {
       X <- z[t, c("X1", "X2")]
-      push_mat[t, ]           <- compute_push_cpp(as.numeric(X), polygon@coords, lambda)
+      push_mat[t, ]           <- compute_push_cpp(as.numeric(X), polygon_coords, lambda)
       potential_grad_mat[t, ] <- mix_gaussian_grad_cpp(
         X, x_star_k, list(B = potential_params_k$B, alpha = potential_params_k$alpha),
         exclude = integer(0)
@@ -431,27 +458,27 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter,
     theta[k + 1, ] <- theta[k, ] + gamma_k * direction
     
     # --- Heating phase termination via 3rd-order exponential mean filter ---
+    # (Baey et al. 2023, Algorithm 3): three exponential means in cascade
+    # applied to the gradient vector v_k, the heating ends when the norm of
+    # the filtered gradient stops decreasing
     if (k >= K_preheat && !heating_finished) {
-      grad_norm_now     <- sqrt(sum(v_k^2))
-      grad_norm_history <- c(grad_norm_history, grad_norm_now)
-      
-      if (length(grad_norm_history) >= 3) {
-        if (is.na(grad_norm_filtered)) {
-          # Initialise filter from mean of first 3 values
-          grad_norm_filtered <- mean(tail(grad_norm_history, 3))
-        } else {
-          grad_norm_filtered_prev <- grad_norm_filtered
-          grad_norm_filtered      <- (1 - C_heating) * grad_norm_filtered +
-            C_heating * grad_norm_now
-          
-          # End heating when filtered norm is no longer decreasing
-          if (!is.na(grad_norm_filtered_prev) &&
-              grad_norm_filtered >= grad_norm_filtered_prev) {
-            heating_finished <- TRUE
-            K_end_heating    <- k
-            if (verbose) message("Heating phase ended at iteration ", k, "\n")
-          }
-        }
+      if (is.null(grad_filter)) {
+        # Initialise all three stages at the first gradient
+        grad_filter <- list(v_k, v_k, v_k)
+      } else {
+        grad_filter[[1]] <- (1 - C_heating) * grad_filter[[1]] + C_heating * v_k
+        grad_filter[[2]] <- (1 - C_heating) * grad_filter[[2]] + C_heating * grad_filter[[1]]
+        grad_filter[[3]] <- (1 - C_heating) * grad_filter[[3]] + C_heating * grad_filter[[2]]
+      }
+      grad_norm_filtered_prev <- grad_norm_filtered
+      grad_norm_filtered      <- sqrt(sum(grad_filter[[3]]^2))
+
+      # End heating when filtered gradient norm is no longer decreasing
+      if (!is.na(grad_norm_filtered_prev) &&
+          grad_norm_filtered >= grad_norm_filtered_prev) {
+        heating_finished <- TRUE
+        K_end_heating    <- k
+        if (verbose) message("Heating phase ended at iteration ", k, "\n")
       }
     }
     

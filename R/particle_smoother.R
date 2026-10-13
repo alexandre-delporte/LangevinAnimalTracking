@@ -7,21 +7,30 @@
 #' @param forward_filter output of the particle_filter2D_cpp function. If NULL, the function
 #'  will run the particle filter first.
 #' @param sde_params list with elements tau, nu, omega
-#' @param potential_params parameters for the potential gradient function
+#' @param potential_params parameters for the potential gradient function.
+#' NULL (default) means no potential, encoded as a single component with zero
+#' weight, identity precision matrix and centre (0, 0)
 #' @param error_params parameters for the measurement error distribution
 #' @param error_dist type of measurement error : "normal", "scaled_t" or "argos"
-#' @param polygon matrix with two columns defining the vertices of the polygonal domain
+#' @param polygon \code{sp::Polygon} object defining the polygonal domain.
+#' Can be NULL when lambda = Inf (no domain penalisation)
 #' @param U0 initial state (vector of length 4)
 #' @param lambda penalty parameter for the inward push
 #' @param num_particles number of particles to use in the particle filter
 #' @param scheme type of splitting scheme to apply "Lie-Trotter" or "Strang"
-#' @param split_around_fixed_point logical. If TRUE, split the SDE around the fixed point
+#' @param split_around_fixed_point logical. If TRUE, split the SDE around the fixed point.
+#' This option is still under development: unlike the default naive splitting,
+#' it does not yet scale the potential gradient and the push by 2*nu^2/pi
+#' (see solve_ODE), so it uses a different drift than the naive splitting
 #' @param ESS_threshold threshold for effective sample size to trigger
 #' resampling in the particle filter
 #' @param verbose logical. If TRUE, print information during the computation
 #' @param print_timing logical. If TRUE, print timing information for each step
+#' @param error_params_per_obs Optional list of length N of per-observation error
+#' parameter lists (e.g. from \code{make_argos_obs_params}), passed to
+#' \code{particle_filter2D_cpp}. Default NULL
 #' @return array of dimension (n_samples, num_states, N)
-#' with the smoothed trajectories7
+#' with the smoothed trajectories
 #' @importFrom mvtnorm dmvnorm
 #' @export
 forward_filtering_backward_sampling <-
@@ -31,14 +40,26 @@ forward_filtering_backward_sampling <-
            ESS_threshold=1,
            verbose = FALSE,print_timing = FALSE,
            error_params_per_obs = NULL) {
+  if (is.null(polygon) && is.finite(lambda)) {
+    stop("polygon must be provided when lambda is finite")
+  }
+
+  # No potential: single component with zero weight, so H and its gradient
+  # are identically zero
+  if (is.null(potential_params)) {
+    potential_params <- list(x_star = matrix(0, 1, 2), B = list(diag(2)), alpha = 0)
+  }
+
   # forward filtering
 
   if (is.null(forward_filter)) {
 
+    polygon_coords <- if (is.null(polygon)) matrix(numeric(0), 0, 2) else polygon@coords
+
     forward_filter = particle_filter2D_cpp(observations=as.matrix(data[,c("time","Y1","Y2")]),
                                            sde_params = sde_params, potential_params = potential_params,
                                            error_params = error_params, error_dist = error_dist,
-                                           polygon_coords = polygon@coords, U0 = U0, lambda = lambda,
+                                           polygon_coords = polygon_coords, U0 = U0, lambda = lambda,
                                            num_particles = num_particles,
                                            split_around_fixed_point = split_around_fixed_point,
                                            scheme = scheme,ESS_threshold=ESS_threshold,

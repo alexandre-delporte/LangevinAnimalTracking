@@ -9,16 +9,16 @@ SGD_Fisher(
   data,
   sde_params,
   fixpar = NULL,
-  SGD_iter,
+  SGD_iter = 2000,
   potential_params = NULL,
   estimate_potential_params = FALSE,
   estimate_centers = FALSE,
-  error_dist = NULL,
-  error_params = NULL,
+  error_dist,
+  error_params,
   scheme = "Lie-Trotter",
-  polygon,
+  polygon = NULL,
   U0,
-  lambda,
+  lambda = Inf,
   num_particles,
   num_particles_min = num_particles,
   num_particles_decay_iter = SGD_iter,
@@ -30,7 +30,7 @@ SGD_Fisher(
   C_heating = 1/100,
   n_smooth_samples = 0,
   error_params_per_obs = NULL,
-  smoothing_method = "FFBS",
+  smoothing_method = "CPF",
   n_sweeps_cpf = 1,
   init_trajectory = NULL
 )
@@ -54,7 +54,7 @@ log-diagonal entries of the lower Cholesky factor of \eqn{B_k}.
 Default \code{NULL} means all active parameters are estimated.}
 
 \item{SGD_iter}{A positive integer giving the total number of SGD
-iterations to run (across all three phases).}
+iterations to run (across all three phases). Default \code{2000}.}
 
 \item{potential_params}{A named list of parameters for the mixture of
 Gaussian potential \eqn{H}, with elements:
@@ -63,7 +63,11 @@ Gaussian potential \eqn{H}, with elements:
   \item{\code{B}}{List of precision matrices for each Gaussian component.}
   \item{\code{x_star}}{Matrix of attraction centres (one row per
     component).}
-}}
+}
+Default \code{NULL} means no potential (\eqn{H \equiv 0}), encoded as a
+single component with zero weight, identity precision matrix and centre
+\eqn{(0, 0)}. Must be provided when
+\code{estimate_potential_params = TRUE}.}
 
 \item{estimate_potential_params}{Logical. If \code{TRUE}, the potential
 parameters (\eqn{\alpha_k} and the log-diagonal Cholesky parametrisation of
@@ -86,23 +90,27 @@ centres (\code{estimate_potential_params = TRUE},
 centres (both \code{TRUE}). Default \code{FALSE}.}
 
 \item{error_dist}{A character string specifying the observation error
-distribution (e.g. \code{"gaussian"}, \code{"argos"}).}
+distribution: \code{"normal"}, \code{"scaled_t"} or \code{"argos"}.}
 
 \item{error_params}{A named list of parameters for the observation error
-distribution (e.g. \code{list(sigma = 0.2)}).}
+distribution (e.g. \code{list(sigma_obs = 0.2)} for \code{"normal"}).
+Can be \code{NULL} only when \code{error_params_per_obs} is provided.}
 
 \item{scheme}{A character string specifying the numerical splitting scheme
 used to approximate the SDE transition density. Either
 \code{"Lie-Trotter"} (default) or \code{"Strang"}.}
 
-\item{polygon}{A \code{SpatialPolygons} object defining the spatial domain
-\eqn{\mathcal{D}} within which animal movement is constrained.}
+\item{polygon}{An \code{sp::Polygon} object defining the spatial domain
+\eqn{\mathcal{D}} within which animal movement is constrained. Can be
+\code{NULL} (the default) only when \code{lambda = Inf}, i.e. when there
+is no domain penalisation.}
 
 \item{U0}{A numeric vector of length 4 giving the initial state
 \eqn{(x_1, x_2, v_1, v_2)} (position and velocity) at time 0.}
 
 \item{lambda}{A positive scalar giving the domain penalisation parameter
-\eqn{\lambda} used in the reflected Langevin push.}
+\eqn{\lambda} used in the reflected Langevin push. Default \code{Inf}
+(no penalisation).}
 
 \item{num_particles}{A positive integer giving the number of particles
 used in the particle filter at the start of SGD (iteration 1). Used for
@@ -123,8 +131,10 @@ which the linear decay of the particle count reaches
 run).}
 
 \item{split_around_fixed_point}{Logical. If \code{TRUE}, the potential is
-split around its fixed point. Currently not implemented and will throw an
-error. Default \code{FALSE}.}
+split around its fixed point. This option is still under development:
+the fixed-point splitting does not yet scale the potential gradient and
+the push by \code{2*nu^2/pi} (see \code{solve_ODE}), so it is currently
+not implemented here and will throw an error. Default \code{FALSE}.}
 
 \item{verbose}{Logical. If \code{TRUE}, progress messages are printed at
 each iteration including the current learning rate, gradient, Fisher
@@ -146,9 +156,10 @@ K_{\text{end-heating}})^{-\alpha_{\text{decay}}}}. Must satisfy \eqn{\alpha_{\te
 ensure \eqn{\sum \gamma_k^2 < \infty}. Default \code{2/3}.}
 
 \item{C_heating}{A small positive scalar giving the smoothing constant of
-the 3rd-order exponential mean filter applied to the gradient norm during
-the heating phase. The heating phase ends when the filtered norm stops
-  decreasing. The authors recommend \eqn{1/1000}. Default \code{1/1000}.}
+the 3rd-order exponential mean filter (three exponential means in
+cascade) applied to the gradient vector during the heating phase. The
+heating phase ends when the norm of the filtered gradient stops
+decreasing. The authors recommend \eqn{1/1000}. Default \code{1/100}.}
 
 \item{n_smooth_samples}{A non-negative integer. If greater than 0, the
 smoothed trajectories from the last \code{n_smooth_samples} iterations
@@ -161,8 +172,8 @@ Passed through to \code{particle_filter2D_cpp} and
 \code{forward_filtering_backward_sampling} at every SGD iteration.
 Only used when \code{error_dist = "argos"}. Default \code{NULL}.}
 
-\item{smoothing_method}{A character string, either \code{"FFBS"} (default)
-or \code{"CPF"}. \code{"FFBS"} draws a fresh smoothed trajectory at every
+\item{smoothing_method}{A character string, either \code{"FFBS"}
+or \code{"CPF"} (default). \code{"FFBS"} draws a fresh smoothed trajectory at every
 SGD iteration via forward-filtering backward-sampling (\code{\link{forward_filtering_backward_sampling}}).
 \code{"CPF"} instead uses the conditional particle filter with ancestor
 sampling (\code{\link{conditional_particle_filter_cpp}}, Svensson et al.

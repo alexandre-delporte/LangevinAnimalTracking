@@ -26,7 +26,7 @@ SGD_Fisher(
   verbose = FALSE,
   gamma0 = 1e-04,
   K_preheat = 1000,
-  alpha = 2/3,
+  alpha_decay = 2/3,
   C_heating = 1/100,
   n_smooth_samples = 0,
   error_params_per_obs = NULL,
@@ -140,9 +140,9 @@ iterations. The authors recommend 1000; this can be increased (with a
 corresponding decrease in \code{gamma0}) if early iterations are
 unstable. Default \code{1000}.}
 
-\item{alpha}{A scalar in \eqn{(1/2, 1]} controlling the decay rate of the
+\item{alpha_decay}{A scalar in \eqn{(1/2, 1]} controlling the decay rate of the
 learning rate in the decreasing phase: \eqn{\gamma_k = (k -
-K_{\text{end-heating}})^{-\alpha}}. Must satisfy \eqn{\alpha > 1/2} to
+K_{\text{end-heating}})^{-\alpha_{\text{decay}}}}. Must satisfy \eqn{\alpha_{\text{decay}} > 1/2} to
 ensure \eqn{\sum \gamma_k^2 < \infty}. Default \code{2/3}.}
 
 \item{C_heating}{A small positive scalar giving the smoothing constant of

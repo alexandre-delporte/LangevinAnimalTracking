@@ -302,7 +302,7 @@ sgd <- SGD_Fisher(
   verbose          = TRUE,
   gamma0           = 1e-4,
   K_preheat        = 50,
-  alpha            = 2/3,
+  alpha_decay      = 2/3,
   C_heating        = 1/10,
   n_smooth_samples = 10,
   error_params_per_obs = obs_ep

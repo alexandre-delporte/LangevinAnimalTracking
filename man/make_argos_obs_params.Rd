@@ -9,7 +9,8 @@ make_argos_obs_params(loc_classes, class_params = argos_class_params())
 \arguments{
 \item{loc_classes}{Character vector of length \code{N} giving the ARGOS
 location class for each observation. Valid values are \code{"3"},
-\code{"2"}, \code{"1"}, \code{"0"}, \code{"A"}, \code{"B"}, \code{"Z"}.}
+\code{"2"}, \code{"1"}, \code{"0"}, \code{"A"}, \code{"B"}. Any other
+class (e.g. \code{"Z"}) falls back to class \code{"B"} with a warning.}
 
 \item{class_params}{Named list of error parameters per class, as returned
 by \code{argos_class_params()}. Override this to use custom parameters.}

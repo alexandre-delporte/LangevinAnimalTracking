@@ -13,6 +13,9 @@ rscaledt(n, scale, df)
 
 \item{df}{degree of freedom}
 }
+\value{
+numeric vector of n samples
+}
 \description{
 Generate random samples from scaled t-distribution
 }

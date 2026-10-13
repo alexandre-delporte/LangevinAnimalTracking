@@ -19,7 +19,8 @@ Brost et al. (2015). The parameters are \code{sigma_obs}, \code{rho},
 }
 \details{
 Location classes in increasing precision order: "B", "A", "0", "1", "2", "3".
-Class "Z" (invalid/deleted) is treated as class "B" (least precise).
+Class "Z" (invalid/deleted) has no entry: \code{make_argos_obs_params}
+treats it as class "B" (least precise), with a warning.
 }
 \references{
 Appendix D in Brost, B.M., Hooten, M.B., Hanks, E.M., & Small, R.J. (2015).

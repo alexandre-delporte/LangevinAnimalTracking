@@ -7,7 +7,8 @@
 #' \code{a}, \code{df}, and \code{p} as used in \code{dmvt_mixture}.
 #'
 #' Location classes in increasing precision order: "B", "A", "0", "1", "2", "3".
-#' Class "Z" (invalid/deleted) is treated as class "B" (least precise).
+#' Class "Z" (invalid/deleted) has no entry: \code{make_argos_obs_params}
+#' treats it as class "B" (least precise), with a warning.
 #'
 #' @return A named list with one element per location class. Each element is a
 #'   list with components \code{sigma_obs}, \code{rho}, \code{a}, \code{df},
@@ -36,7 +37,8 @@ argos_class_params <- function() {
 #'
 #' @param loc_classes Character vector of length \code{N} giving the ARGOS
 #'   location class for each observation. Valid values are \code{"3"},
-#'   \code{"2"}, \code{"1"}, \code{"0"}, \code{"A"}, \code{"B"}, \code{"Z"}.
+#'   \code{"2"}, \code{"1"}, \code{"0"}, \code{"A"}, \code{"B"}. Any other
+#'   class (e.g. \code{"Z"}) falls back to class \code{"B"} with a warning.
 #' @param class_params Named list of error parameters per class, as returned
 #'   by \code{argos_class_params()}. Override this to use custom parameters.
 #'
@@ -65,6 +67,7 @@ make_argos_obs_params <- function(loc_classes,
   lapply(loc_classes, function(cls) class_params[[cls]])
 }
 
+#' Density of the scaled t-distribution
 #' @param y point where we want to evaluate the density
 #' @param mean mean parameter
 #' @param scale positive scale parameter 
@@ -83,6 +86,7 @@ dscaledt <- function(y, mean, scale, df,log=FALSE) {
 #' @param n number of samples
 #' @param scale positive scale parameter
 #' @param df degree of freedom
+#' @return numeric vector of n samples
 #' @export
 rscaledt <- function(n, scale, df) {
   
@@ -108,15 +112,14 @@ rmvt_mixture <- function(n,params) {
     -params$rho * sqrt(params$a),
     -params$rho * sqrt(params$a),1), nrow = 2)
   
-  #Sample from one component of the mixture
-  u<-runif(1)
-  
-  if (u <params$p) {
-    return (mvtnorm::rmvt(n,sigma = Sigma1, df = params$df))
-  }
-  else {
-    return (mvtnorm::rmvt(n,sigma = Sigma2, df = params$df))
-  }
+  # Sample the mixture component independently for each sample
+  from_first <- runif(n) < params$p
+
+  samples <- matrix(0, nrow = n, ncol = 2)
+  n1 <- sum(from_first)
+  if (n1 > 0) samples[from_first, ] <- mvtnorm::rmvt(n1, sigma = Sigma1, df = params$df)
+  if (n1 < n) samples[!from_first, ] <- mvtnorm::rmvt(n - n1, sigma = Sigma2, df = params$df)
+  return(samples)
 }
  #' Density of mixture of multivariate student for error in ARGOS positions
  #'@param x point where to evaluate the density

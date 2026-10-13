@@ -9,17 +9,17 @@
 #'   everywhere (unpenalized free movement, no attraction to any point).
 #' @param sigma_obs Array of covariance matrices for the
 #' measurement error for each observation
-#' @param polygon polygon defining the ecological domain of interest
+#' @param polygon An \code{sp::Polygon} object defining the boundary (its \code{coords} slot is used)
 #' @param lambda Penalisation parameter. Default : Inf (no penalisation)
-#' @param U0 Initial guess for the hidden state. A vector of length 4 with position and velocity for RACVM, 
-#' and a vector of length for OU
-#' @param R0 Initial guess for the covariance matrix of the hidden state. Dimensions 
-#' 4x4 for RACVM and 2x2 for OU
+#' @param U0 Initial guess for the hidden state: position and velocity (vector of length 4)
+#' @param R0 Initial guess for the covariance matrix of the hidden state (4x4 matrix)
 #' @param split_around_fixed_point Boolean. If TRUE, split around fixed point of 
 #' the potential. Only works for mixture of Gaussian potential
 #' 
-#' @return matrix with filtered states (position and velocity). 
-#' Dimension (\code{nrow(data)},4) 
+#' @return A list with elements \code{U} (matrix of filtered states, position
+#' and velocity, of dimension (\code{nrow(data)}, 4)), \code{loglik}
+#' (log-likelihood) and \code{loglik_vector} (log-likelihood contribution of
+#' each observation after the first)
 #' @export
 #' @importFrom expm expm
 #'
@@ -167,20 +167,22 @@ kalman_filter <- function(data,sde_params,potential_params=NULL,
 #' @param data data frame with columns Y1,Y2 for observations, time for time
 #' @param sde_params List of parameters tau,nu,omega 
 #' @param potential_hessian Function to compute Hessian matrix of the potential surface
-#' @param potential_params Parameters for a mixture of gaussian potential. Only necessary
-#' if split_around_fixed_point is TRUE.
+#' @param potential_params Parameters for a mixture of Gaussian potential.
+#'   Defaults to \code{NULL}, in which case the potential is set to zero
+#'   everywhere (unpenalized free movement, no attraction to any point).
 #' @param sigma_obs Array of covariance matrices for the 
 #' measurement error for each observation
-#' @param polygon polygon defining the ecological domain of interest
+#' @param polygon An \code{sp::Polygon} object defining the boundary (its \code{coords} slot is used)
 #' @param lambda Penalisation parameter. Default : Inf (no penalisation)
-#' @param U0 Initial guess for the hidden state. A vector of length 4 with position and velocity for RACVM, 
-#' and a vector of length for OU
-#' @param R0 Initial guess for the covariance matrix of the hidden state. Dimensions 
-#' 4x4 for RACVM and 2x2 for OU
+#' @param U0 Initial guess for the hidden state: position and velocity (vector of length 4)
+#' @param R0 Initial guess for the covariance matrix of the hidden state (4x4 matrix)
 #' @param split_around_fixed_point Boolean. If TRUE, split around fixed point of
-#' the potential. Only works for mixture of mixture of gaussian potential
+#' the potential. Only works for mixture of Gaussian potential
 #' 
-#' @return matrix with filtered states. Dimension (\code{nrow(data)},4)
+#' @return A list with elements \code{U} (matrix of filtered states, position
+#' and velocity, of dimension (\code{nrow(data)}, 4)), \code{loglik}
+#' (log-likelihood) and \code{loglik_vector} (log-likelihood contribution of
+#' each observation after the first)
 #' @export
 #' @importFrom expm expm
 extended_kalman_filter <- function(data,sde_params,potential_hessian,
@@ -213,6 +215,21 @@ extended_kalman_filter <- function(data,sde_params,potential_hessian,
     stop(paste("`R0` must be a", expected_dim, "x", expected_dim, "matrix."))
   }
   
+  # Check potential parameters if splitting around fixed point
+  if (split_around_fixed_point && is.null(potential_params)) {
+    stop("split_around_fixed_point = TRUE requires non-null potential_params")
+  }
+
+  # NULL means "no potential" (zero everywhere), encoded as a single mixture
+  # component with zero weight so downstream code is unchanged.
+  if (is.null(potential_params)) {
+    potential_params <- list(
+      x_star = matrix(c(0, 0), ncol = 2, byrow = TRUE),
+      B      = list(diag(c(1, 1))),
+      alpha  = c(0)
+    )
+  }
+
   n_steps <- nrow(data)
   U_hat <- matrix(0, nrow = n_steps, ncol = length(U0)) 
   U_hat[1, ] <- U0

@@ -25,27 +25,29 @@ extended_kalman_filter(
 
 \item{potential_hessian}{Function to compute Hessian matrix of the potential surface}
 
-\item{potential_params}{Parameters for a mixture of gaussian potential. Only necessary
-if split_around_fixed_point is TRUE.}
+\item{potential_params}{Parameters for a mixture of Gaussian potential.
+Defaults to \code{NULL}, in which case the potential is set to zero
+everywhere (unpenalized free movement, no attraction to any point).}
 
 \item{sigma_obs}{Array of covariance matrices for the 
 measurement error for each observation}
 
-\item{polygon}{polygon defining the ecological domain of interest}
+\item{polygon}{An \code{sp::Polygon} object defining the boundary (its \code{coords} slot is used)}
 
 \item{lambda}{Penalisation parameter. Default : Inf (no penalisation)}
 
-\item{U0}{Initial guess for the hidden state. A vector of length 4 with position and velocity for RACVM, 
-and a vector of length for OU}
+\item{U0}{Initial guess for the hidden state: position and velocity (vector of length 4)}
 
-\item{R0}{Initial guess for the covariance matrix of the hidden state. Dimensions 
-4x4 for RACVM and 2x2 for OU}
+\item{R0}{Initial guess for the covariance matrix of the hidden state (4x4 matrix)}
 
 \item{split_around_fixed_point}{Boolean. If TRUE, split around fixed point of
-the potential. Only works for mixture of mixture of gaussian potential}
+the potential. Only works for mixture of Gaussian potential}
 }
 \value{
-matrix with filtered states. Dimension (\code{nrow(data)},4)
+A list with elements \code{U} (matrix of filtered states, position
+and velocity, of dimension (\code{nrow(data)}, 4)), \code{loglik}
+(log-likelihood) and \code{loglik_vector} (log-likelihood contribution of
+each observation after the first)
 }
 \description{
 Extended Kalman filter algorithm for penalised Langevin SDE 

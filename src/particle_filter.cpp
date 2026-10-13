@@ -897,9 +897,7 @@ static inline double transition_log_density(
     arma::vec V_next = U_target.subvec(2, 3);
 
     arma::vec push_next = compute_push_cpp(X_next, polygon_coords, lambda);
-    // Push and gradient scaled by 2*nu^2/pi — see R/llk_gradient.R docs.
-    // Always the naive (non-fixed-point) gradient here, per this function's
-    // doc comment above.
+
     double nu_scale = 2.0 * nu * nu / M_PI;
     arma::vec grad_next = mix_gaussian_grad_cpp(X_next, x_star, potential_params, IntegerVector());
 
@@ -959,7 +957,6 @@ static arma::mat run_cpf_as_sweep(
   arma::mat invS_argos1, invS_argos2;
   double log_p_argos = 0.0, log_1mp_argos = 0.0;
 
-  // Skipped when error_params is NULL, since error_params_per_obs then covers every time step
   if (has_error_params) {
     if (error_dist == "normal") {
       sigma_obs = as<double>(error_params["sigma_obs"]);
@@ -1004,12 +1001,9 @@ static arma::mat run_cpf_as_sweep(
     double step_sigma_obs = sigma_obs, step_scale = scale, step_df = df, step_rho = rho, step_a = a;
     double step_log_p = log_p_argos, step_log_1mp = log_1mp_argos;
     arma::mat step_invS1 = invS_argos1, step_invS2 = invS_argos2;
-    // empty when error_params is NULL, which is only allowed when has_error_params_per_obs is
-    // TRUE, i.e. always overridden just below
     List step_error_params = has_error_params ? error_params : List();
 
     if (has_error_params_per_obs) {
-      // works for any error_dist, not just "argos"
       step_error_params = as<List>(error_params_per_obs_list[j + 1]);
 
       if (error_dist == "normal") {
@@ -1224,8 +1218,6 @@ List conditional_particle_filter_cpp(
 ) {
   int N = observations.n_rows;
 
-  // Resolve potential_params: NULL means "no potential" (zero everywhere), encoded as a
-  // single mixture component with zero weight so downstream code is unchanged.
   List potential_params_resolved;
   if (potential_params.isNull()) {
     potential_params_resolved = List::create(
@@ -1237,8 +1229,6 @@ List conditional_particle_filter_cpp(
     potential_params_resolved = as<List>(potential_params);
   }
 
-  // Resolve error_params / error_params_per_obs. At least one is required: error_params may be
-  // NULL only when error_params_per_obs supplies per-observation error parameters instead.
   bool has_error_params = error_params.isNotNull();
   bool has_error_params_per_obs = error_params_per_obs.isNotNull();
   if (!has_error_params && !has_error_params_per_obs) {

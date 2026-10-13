@@ -12,7 +12,7 @@ choose_center(x, x_star, params)
 \item{x_star}{matrix of coordinates of each center in the mixture (J x 2)}
 
 \item{params}{List of parameters:
-- alpha: list of weights in the mixture
+- alpha: vector of weights in the mixture
 - B:  list of precision matrices in the mixture}
 }
 \value{

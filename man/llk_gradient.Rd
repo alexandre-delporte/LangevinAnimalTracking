@@ -34,8 +34,9 @@ the potential at each time step}
 
 \item{scheme}{Integration scheme: "Lie-Trotter" or "Strang"}
 
-\item{potential_params}{Optional list with elements alpha, B for the Gaussian mixture
-potential. When provided, gradients w.r.t. potential parameters are appended.}
+\item{potential_params}{Optional list with elements alpha, B and x_star for the
+Gaussian mixture potential. When provided, gradients w.r.t. potential parameters
+are appended.}
 
 \item{estimate_centers}{Logical. If TRUE (and potential_params is provided), gradients
 w.r.t. the attraction centres x_star are also appended. Default FALSE.}

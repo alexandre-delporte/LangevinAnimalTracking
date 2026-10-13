@@ -16,8 +16,8 @@ dRACVM_cov(tau, nu, omega, h)
 \item{h}{time step}
 }
 \value{
-List with three elements: derivatives of Q with respect to
-#' tau, nu, and omega : three 4x4 matrices: dQ_dtau, dQ_dnu, dQ_domega
+List with elements tau, nu and omega: the 4x4 derivatives of Q
+with respect to each parameter
 }
 \description{
 Function to compute partial derivatives of RACVM covariance matrix Q

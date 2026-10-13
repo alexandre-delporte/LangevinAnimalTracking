@@ -4,8 +4,8 @@
 #' @param nu RACVM parameter nu
 #' @param omega RACVM parameter omega
 #' @param h time step
-#' @return List with three elements: derivatives of Q with respect to
-#' #' tau, nu, and omega : three 4x4 matrices: dQ_dtau, dQ_dnu, dQ_domega
+#' @return List with elements tau, nu and omega: the 4x4 derivatives of Q
+#' with respect to each parameter
 #' @export
 dRACVM_cov <- function(tau, nu, omega,h) {
   
@@ -170,8 +170,8 @@ dRACVM_cov <- function(tau, nu, omega,h) {
 #' @param tau RACVM parameter tau
 #' @param omega RACVM parameter omega
 #' @param h time step
-#' @return List with three elements: derivatives of Q with respect to
-#' #' tau, nu, and omega : three 4x4 matrices: dT_dtau, dT_dnu = 0, dQ_domega
+#' @return List with elements tau, nu and omega: the 4x4 derivatives of the
+#' link matrix T with respect to each parameter (the nu derivative is zero)
 #' @export
 dRACVM_link=function(tau,omega,h) {
   
@@ -525,8 +525,9 @@ llk_gradient_one_step <- function(U_next, U_prev, delta, push, potential_grad,
 #' @param nu RACVM parameter nu
 #' @param omega RACVM parameter omega
 #' @param scheme Integration scheme: "Lie-Trotter" or "Strang"
-#' @param potential_params Optional list with elements alpha, B for the Gaussian mixture
-#'   potential. When provided, gradients w.r.t. potential parameters are appended.
+#' @param potential_params Optional list with elements alpha, B and x_star for the
+#'   Gaussian mixture potential. When provided, gradients w.r.t. potential parameters
+#'   are appended.
 #' @param estimate_centers Logical. If TRUE (and potential_params is provided), gradients
 #'   w.r.t. the attraction centres x_star are also appended. Default FALSE.
 #' @param verbose If TRUE, print detailed computation steps

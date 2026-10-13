@@ -7,7 +7,7 @@
 get_PF_mean(PF_results)
 }
 \arguments{
-\item{PF_results}{List as returned by \code{particle_filter_2D}}
+\item{PF_results}{List as returned by \code{particle_filter2D_cpp}}
 }
 \value{
 a matrix of estimated filtered states based on conditional mean

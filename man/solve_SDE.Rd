@@ -28,8 +28,8 @@ solve_SDE(
 
 \item{omega}{Numeric scalar. Rotation parameter.}
 
-\item{potential_params}{List of parameters for the Gaussian mixture potential 
-(used if \code{split_around_fixed_point=TRUE}), with elements:
+\item{potential_params}{List of parameters for the Gaussian mixture potential,
+with elements:
 \describe{
   \item{\code{alpha}}{Numeric vector of mixture weights.}
   \item{\code{B}}{List of precision matrices.}

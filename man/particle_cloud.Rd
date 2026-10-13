@@ -8,7 +8,7 @@ at a specific time step}
 particle_cloud(t0, data, particles, weights, polygon = NULL)
 }
 \arguments{
-\item{t0}{time}
+\item{t0}{index of the time step (observation) to plot}
 
 \item{data}{data frame of observations with columns Y1 and Y2}
 
@@ -16,7 +16,11 @@ particle_cloud(t0, data, particles, weights, polygon = NULL)
 
 \item{weights}{matrix of particle weights as returned by \code{particle_filter2D_cpp}}
 
-\item{polygon}{SpatialPolygons object defining the boundary (from `sp` package`)}
+\item{polygon}{An \code{sp::Polygon} object defining the boundary (its \code{coords} slot is used). Optional}
+}
+\value{
+A ggplot object showing the particles (sized by weight) and the
+observation at time step t0
 }
 \description{
 Plot cloud of particles to see where particles are landing 

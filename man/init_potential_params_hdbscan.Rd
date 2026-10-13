@@ -21,7 +21,7 @@ coordinate columns in \code{data} (default \code{c("Y1","Y2")})}
 
 \item{minPts}{Minimum number of points per cluster, passed to
 \code{dbscan::hdbscan}. Defaults to 10\% of the number of rows in
-\code{data}}
+\code{data}, with a minimum of 5}
 
 \item{alpha_init}{Initial mixture weight assigned to every cluster found.
 Defaults to 0}

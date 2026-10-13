@@ -20,7 +20,7 @@ compare_trajectories_in_polygon(
 
 \item{U_est}{Matrix of estimated states (x1, x2) from particle filter}
 
-\item{polygon}{SpatialPolygons object defining the boundary (from `sp` package)}
+\item{polygon}{An \code{sp::Polygon} object defining the boundary (its \code{coords} slot is used)}
 
 \item{true_line_opacity}{Opacity for true trajectory line (0-1, default: 0.5)}
 

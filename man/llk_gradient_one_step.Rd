@@ -30,7 +30,8 @@ llk_gradient_one_step(
 
 \item{delta}{Time step size}
 
-\item{push}{Push vector at previous time step (length 2)}
+\item{push}{RAW (unscaled) push vector at previous time step (length 2);
+the nu_scale factor is applied internally, not by the caller.}
 
 \item{potential_grad}{RAW (unscaled) gradient of the mixture potential H(x)
 at the previous time step (length 2); the nu_scale factor is applied
@@ -44,7 +45,8 @@ internally, not by the caller.}
 
 \item{scheme}{Integration scheme: "Lie-Trotter" or "Strang"}
 
-\item{push_next}{Push vector at next time step (length 2) - REQUIRED for Strang scheme}
+\item{push_next}{RAW (unscaled) push vector at next time step (length 2) -
+REQUIRED for Strang scheme}
 
 \item{potential_grad_next}{RAW (unscaled) gradient of H(x) at the next time
 step (length 2) - REQUIRED for Strang scheme}
@@ -69,18 +71,21 @@ Named numeric vector with gradients w.r.t. tau, nu, omega, and optionally
   l-th coordinate of the k-th attraction centre
 }
 \description{
-The velocity drift includes the potential gradient scaled by
-\code{nu_scale = 2*nu^2/pi}, i.e. the model's drift term is
-\code{nu_scale * potential_grad}, not \code{potential_grad} directly. This
-scaling is what makes the process's stationary distribution
+The velocity drift includes the potential gradient and the push, both
+scaled by \code{nu_scale = 2*nu^2/pi}, i.e. the model's drift term is
+\code{nu_scale * (push + potential_grad)}, not
+\code{push + potential_grad} directly. Scaling the push makes the
+penalisation strength scale with the speed of movement. Scaling the
+potential gradient is what makes the process's stationary distribution
 \code{exp(H(x))} independent of tau and nu (see set-up notes / Michelot
 2024 Eq. 1, Blackwell 2026 Eq. 6): without it, alpha_k (well strength) and
 nu (speed) are only identifiable through their ratio. Because nu now
 enters the drift as well as the diffusion, its score gains a term beyond
 the existing dQ/dnu contribution (term1/term2) and beyond dT/dnu (which is
 identically zero, since the free-process link matrix T never depended on
-nu): d(nu_scale)/dnu = 4*nu/pi multiplies potential_grad (and, for the
-Strang scheme, potential_grad_next) inside mu and r respectively. That
+nu): d(nu_scale)/dnu = 4*nu/pi multiplies push + potential_grad (and, for
+the Strang scheme, push_next + potential_grad_next) inside mu and r
+respectively. That
 extra term is computed explicitly below rather than folded into the
 generic T_derivs loop.
 }

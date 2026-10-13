@@ -12,13 +12,13 @@ mix_gaussian_potential(x, x_star, params, exclude = NULL)
 \item{x_star}{matrix of coordinates of each center in the mixture}
 
 \item{params}{List of parameters:
-- alpha: list of weights in the mixture
-- B:  list of covariance matrices in the mixture}
+- alpha: vector of weights in the mixture
+- B:  list of precision matrices in the mixture}
 
 \item{exclude}{vector of indices of mixture components to exclude from the computation}
 }
 \value{
-A numeric vector of length 2: (dphi/dx, dphi/dy)
+Numeric value of the potential at x
 }
 \description{
 Compute value of a mixture of Gaussian potentials

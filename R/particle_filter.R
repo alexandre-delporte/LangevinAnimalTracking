@@ -1,6 +1,6 @@
 
 #' Get estimate of the trajectory (conditional mean) from particle filter 
-#' @param PF_results List as returned by \code{particle_filter_2D}
+#' @param PF_results List as returned by \code{particle_filter2D_cpp}
 #' @return a matrix of estimated filtered states based on conditional mean
 #' @export
 get_PF_mean<-function(PF_results) {
@@ -25,7 +25,7 @@ get_PF_mean<-function(PF_results) {
 #'
 #' @param U_true Matrix of true states (x1, x2) from simulation
 #' @param U_est Matrix of estimated states (x1, x2) from particle filter
-#' @param polygon SpatialPolygons object defining the boundary (from `sp` package)
+#' @param polygon An \code{sp::Polygon} object defining the boundary (its \code{coords} slot is used)
 #' @param true_line_opacity Opacity for true trajectory line (0-1, default: 0.5)
 #' @param est_line_opacity Opacity for estimated trajectory line (0-1, default: 0.1)
 #' @param zoom_box Optional list with elements `xmin`, `xmax`, `ymin`, `ymax` 
@@ -94,11 +94,13 @@ compare_trajectories_in_polygon <- function(U_true, U_est,
 
 #' Plot cloud of particles to see where particles are landing 
 #' at a specific time step
-#' @param t0 time 
+#' @param t0 index of the time step (observation) to plot
 #' @param data data frame of observations with columns Y1 and Y2
 #' @param particles array of particles as returned by \code{particle_filter2D_cpp}
 #' @param weights matrix of particle weights as returned by \code{particle_filter2D_cpp}
-#' @param polygon SpatialPolygons object defining the boundary (from `sp` package`)
+#' @param polygon An \code{sp::Polygon} object defining the boundary (its \code{coords} slot is used). Optional
+#' @return A ggplot object showing the particles (sized by weight) and the
+#' observation at time step t0
 #' @export
 #' @import ggplot2
 #' @importFrom sp SpatialPolygons

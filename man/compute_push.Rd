@@ -9,7 +9,7 @@ compute_push(x, polygon, lambda)
 \arguments{
 \item{x}{Numeric vector of length 2: coordinates of the point}
 
-\item{polygon}{SpatialPolygon object representing the polygon}
+\item{polygon}{An \code{sp::Polygon} object defining the boundary (its \code{coords} slot is used)}
 
 \item{lambda}{penalty parameter}
 }

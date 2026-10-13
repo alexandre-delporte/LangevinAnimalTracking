@@ -6,6 +6,14 @@ using namespace arma;
 
 // [[Rcpp::depends(RcppArmadillo)]]
 
+//' Gradient of a mixture of Gaussian potentials (C++ version)
+//' @param x Numeric vector of length 2: position
+//' @param x_star Matrix of attraction centres (one row per component)
+//' @param params List with elements alpha (vector of weights) and B (list of
+//' 2x2 precision matrices)
+//' @param exclude Integer vector of (1-based) indices of components to exclude
+//' from the computation
+//' @return Numeric vector of length 2: gradient of the potential at x
 // [[Rcpp::export]]
 arma::vec mix_gaussian_grad_cpp(const arma::vec& x,
                                      const arma::mat& x_star,
@@ -31,6 +39,11 @@ arma::vec mix_gaussian_grad_cpp(const arma::vec& x,
 
 
 
+//' Log-density of a multivariate normal using the Cholesky factor (C++ version)
+//' @param x Numeric vector of length d: point where to evaluate the density
+//' @param mean Numeric vector of length d: mean of the distribution
+//' @param cholSigma Upper Cholesky factor of the covariance matrix (d x d)
+//' @return Log-density value
 // [[Rcpp::export]]
 double log_dmvnorm_chol_cpp(const arma::vec& x,
                             const arma::vec& mean,
@@ -109,6 +122,9 @@ List product_gaussian_cpp(const arma::mat& P1,
 }
 
  
+//' Upper-triangular Cholesky factor of a matrix
+//' @param Q Symmetric positive-definite matrix
+//' @return Upper-triangular matrix R such that R'R = Q
 // [[Rcpp::export]]
 arma::mat chol_cpp(const arma::mat& Q) {
   // Compute the upper-triangular Cholesky factor
@@ -116,6 +132,9 @@ arma::mat chol_cpp(const arma::mat& Q) {
   return U;
 }
 
+//' Inverse of a matrix from its Cholesky factor
+//' @param R Upper-triangular Cholesky factor such that R'R = Q
+//' @return Inverse of Q
 // [[Rcpp::export]]
 arma::mat chol2inv_cpp(const arma::mat& R) {
     // R = upper-triangular Cholesky factor such that R'R = Q
@@ -126,6 +145,12 @@ arma::mat chol2inv_cpp(const arma::mat& R) {
     return invQ;
 }
 
+//' Choose the center with the largest gradient norm (C++ version)
+//' @param x Numeric vector of length 2: position
+//' @param x_star Matrix of attraction centres (J x 2)
+//' @param params List with elements alpha (vector of weights) and B (list of
+//' 2x2 precision matrices)
+//' @return Index (1-based) of the chosen center
 // [[Rcpp::export]]
 int choose_center_cpp(const arma::vec& x,
                       const arma::mat& x_star,
@@ -158,6 +183,13 @@ int choose_center_cpp(const arma::vec& x,
   return L_vals.index_max() + 1;
 }
 
+//' Choose the center with the largest gradient norm for several positions
+//' @param X Matrix of positions (one row per particle, 2 columns)
+//' @param x_star Matrix of attraction centres (J x 2)
+//' @param params List with elements alpha (vector of weights) and B (list of
+//' 2x2 precision matrices)
+//' @return Integer vector of (1-based) indices of the chosen center for each
+//' row of X
 // [[Rcpp::export]]
 arma::ivec choose_center_matrix_cpp(const arma::mat& X,
                                     const arma::mat& x_star,
@@ -199,6 +231,13 @@ arma::ivec choose_center_matrix_cpp(const arma::mat& X,
   return centers;
 }
 
+//' Find the closest point on the boundary of a polygon (C++ version)
+//' @param x Numeric vector of length 2: coordinates of the point
+//' @param coords Matrix of polygon boundary coordinates (as in \code{polygon@coords})
+//' @param grad Logical. If TRUE, also compute the gradient of the projection
+//' @return A list with elements point (coordinates of the closest boundary
+//' point) and gradient (2x2 Jacobian of the projection, or NULL at vertices
+//' or when grad is FALSE)
 // [[Rcpp::export]]
 List closest_point_on_boundary_cpp(const arma::vec& x,
                                    const arma::mat& coords,
@@ -308,6 +347,11 @@ arma::vec compute_push_cpp(const arma::vec& x,
   return (x - p) / lambda;
 }
 
+//' Compute the penalisation term for several positions
+//' @param X Matrix of positions (one row per particle, 2 columns)
+//' @param coords Matrix of polygon boundary coordinates (as in \code{polygon@coords})
+//' @param lambda Penalty parameter (Inf for no penalisation)
+//' @return Matrix with one row per row of X: penalisation term at each position
 // [[Rcpp::export]]
 arma::mat compute_push_matrix_cpp(const arma::mat& X,
                                    const arma::mat& coords,
@@ -344,6 +388,13 @@ arma::mat compute_push_matrix_cpp(const arma::mat& X,
 }
 
 
+//' Density of the scaled t-distribution (C++ version)
+//' @param y Point where to evaluate the density
+//' @param mean Location parameter
+//' @param scale Positive scale parameter
+//' @param df Degrees of freedom
+//' @param logp Logical. If TRUE, the log-density is returned
+//' @return Density (or log-density) value
 // [[Rcpp::export]]
 double dscaledt_cpp(double y,
                     double mean,
@@ -367,6 +418,13 @@ double dscaledt_cpp(double y,
 }
 
 
+//' Density of the mixture of multivariate Student-t for ARGOS errors (C++ version)
+//' @param x Numeric vector of length 2: point where to evaluate the density
+//' @param mean Numeric vector of length 2: mean of the Student-t distributions
+//' @param params List with elements sigma_obs, rho, a, df and p (see Brost et
+//' al. 2015)
+//' @param logp Logical. If TRUE, the log-density is returned
+//' @return Density (or log-density) value
 // [[Rcpp::export]]
 double dmvt_mixture_cpp(const arma::vec& x,
                         const arma::vec& mean,

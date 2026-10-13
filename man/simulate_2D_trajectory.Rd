@@ -26,11 +26,10 @@ simulate_2D_trajectory(
 
 \item{sde_params}{List of movement parameters tau,nu,omega}
 
-\item{potential_params}{List of parameters for the potential.
-Only necessary when fixed_point_ind is not null, and only works with 
-mixture of Gaussian potentials. The list has elements 
+\item{potential_params}{List of parameters for the mixture of Gaussian
+potential. The list has elements 
 \code{potential_params$alpha} which is a vector of weights, 
-\code{potential_params$B} which is a list of covariance matrices, 
+\code{potential_params$B} which is a list of precision matrices, 
 and \code{potential_params$x_star} which is a matrix of coordinates of each 
 center in the mixture.}
 
@@ -39,12 +38,11 @@ center in the mixture.}
 \item{error_dist}{Distribution of the measurement error. 
 Options are normal,scaled_t and argos}
 
-\item{polygon}{A matrix defining the boundary polygon (n x 2 coordinates)}
+\item{polygon}{An \code{sp::Polygon} object defining the boundary (its \code{coords} slot is used). Only used when lambda is finite}
 
 \item{lambda}{Penalization parameter.}
 
-\item{U0}{initial state. Initial position and velocity for RACVM, 
-and only initial position for BM and OU}
+\item{U0}{initial state: position and velocity (vector of length 4)}
 
 \item{N}{Integer, number of time steps to simulate}
 
@@ -53,7 +51,11 @@ and only initial position for BM and OU}
 \item{scheme}{String, splitting scheme to use. Options are "Lie-Trotter" and "Strang"}
 
 \item{split_around_fixed_point}{Boolean whether
-to do the splitting adaptatively around a fixed point of the potential}
+to do the splitting adaptatively around a fixed point of the potential.
+This option is still under development: unlike the default naive
+splitting, it does not yet scale the potential gradient and the push by
+\code{2*nu^2/pi} (see \code{solve_ODE}), so it simulates from a different
+drift than the one assumed by the filters and \code{SGD_Fisher}.}
 
 \item{ncores}{Number of cores to use for parallel simulation}
 
@@ -63,7 +65,7 @@ to do the splitting adaptatively around a fixed point of the potential}
 A dataframe containing with Nxn_sim rows with columns
 \itemize{
   \item X1, X2: true position
-  \item V1, V2 : true velocity (for RACVM)
+  \item V1, V2 : true velocity
   \item Y1, Y2 : Noisy position
   \item ID : trajectory identifier
 }

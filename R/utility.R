@@ -147,7 +147,7 @@ closest_point_on_boundary <- function(x, polygon, grad = TRUE) {
 
 #' Function to check if a point is inside the polygon
 #' @param x Numeric vector of length 2: coordinates of the point
-#' @param polygon SpatialPolygon object representing the polygon
+#' @param polygon An \code{sp::Polygon} object defining the boundary (its \code{coords} slot is used)
 #' @return logical: TRUE if the point is inside or on the edge, FALSE otherwise
 #' @importFrom sp point.in.polygon
 is_point_inside_polygon <- function(x, polygon) {
@@ -159,7 +159,7 @@ is_point_inside_polygon <- function(x, polygon) {
 
 #' Compute penalisation term
 #' @param x Numeric vector of length 2: coordinates of the point
-#' @param polygon SpatialPolygon object representing the polygon
+#' @param polygon An \code{sp::Polygon} object defining the boundary (its \code{coords} slot is used)
 #' @param lambda penalty parameter
 #' @return Numeric vector of length 2: penalisation term
 #' @export
@@ -180,8 +180,8 @@ compute_push <- function(x, polygon, lambda) {
 #' @param x coordinates of the position
 #' @param x_star matrix of coordinates of each center in the mixture (default = 0,0)
 #' @param params List of parameters:
-#'   - alpha: list of weights in the mixture
-#'   - B:  list of covariance matrices in the mixture
+#'   - alpha: vector of weights in the mixture
+#'   - B:  list of precision matrices in the mixture
 #' @param exclude vector of indices of mixture components to exclude from the computation
 #'
 #' @return A numeric vector of length 2: (dphi/dx, dphi/dy)
@@ -213,11 +213,11 @@ mix_gaussian_grad <- function(x, x_star = matrix(c(0,0), ncol = 2), params,
 #' @param x coordinates of the position
 #' @param x_star matrix of coordinates of each center in the mixture
 #' @param params List of parameters:
-#'   - alpha: list of weights in the mixture
-#'   - B:  list of covariance matrices in the mixture
+#'   - alpha: vector of weights in the mixture
+#'   - B:  list of precision matrices in the mixture
 #' @param exclude vector of indices of mixture components to exclude from the computation
 #'
-#' @return A numeric vector of length 2: (dphi/dx, dphi/dy)
+#' @return Numeric value of the potential at x
 #' @export
 mix_gaussian_potential <- function(x, x_star, params,exclude=NULL) {
   alpha <- params$alpha
@@ -289,7 +289,7 @@ mix_gaussian_hessian <- function(x, x_star, params,exclude=NULL) {
 #' @param x coordinates of the position (numeric vector of length 2)
 #' @param x_star matrix of coordinates of each center in the mixture (J x 2)
 #' @param params List of parameters:
-#'   - alpha: list of weights in the mixture
+#'   - alpha: vector of weights in the mixture
 #'   - B:  list of precision matrices in the mixture
 #'
 #' @return index of the chosen center
@@ -330,7 +330,7 @@ choose_center <- function(x, x_star, params) {
 #'   coordinate columns in \code{data} (default \code{c("Y1","Y2")})
 #' @param minPts Minimum number of points per cluster, passed to
 #'   \code{dbscan::hdbscan}. Defaults to 10\% of the number of rows in
-#'   \code{data}
+#'   \code{data}, with a minimum of 5
 #' @param alpha_init Initial mixture weight assigned to every cluster found.
 #'   Defaults to 0
 #' @param min_size Minimum number of points a HDBSCAN cluster must contain to

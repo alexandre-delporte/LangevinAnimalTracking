@@ -14,8 +14,8 @@ dRACVM_link(tau, omega, h)
 \item{h}{time step}
 }
 \value{
-List with three elements: derivatives of Q with respect to
-#' tau, nu, and omega : three 4x4 matrices: dT_dtau, dT_dnu = 0, dQ_domega
+List with elements tau, nu and omega: the 4x4 derivatives of the
+link matrix T with respect to each parameter (the nu derivative is zero)
 }
 \description{
 Function to compute partial derivatives of RACVM link matrix T (Delporte et .al 2025)

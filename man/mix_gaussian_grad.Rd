@@ -17,8 +17,8 @@ mix_gaussian_grad(
 \item{x_star}{matrix of coordinates of each center in the mixture (default = 0,0)}
 
 \item{params}{List of parameters:
-- alpha: list of weights in the mixture
-- B:  list of covariance matrices in the mixture}
+- alpha: vector of weights in the mixture
+- B:  list of precision matrices in the mixture}
 
 \item{exclude}{vector of indices of mixture components to exclude from the computation}
 }

@@ -11,8 +11,8 @@
 #'   \eqn{(x, y, v_x, v_y)} representing position and velocity.
 #' @param delta Numeric scalar. Time step size.
 #' @param push Numeric vector of length 2. External forcing (push) on the system.
-#' @param potential_params List of parameters for the Gaussian mixture potential 
-#'   (used if \code{split_around_fixed_point=TRUE}), with elements:
+#' @param potential_params List of parameters for the Gaussian mixture potential,
+#'   with elements:
 #'   \describe{
 #'     \item{\code{alpha}}{Numeric vector of mixture weights.}
 #'     \item{\code{B}}{List of precision matrices.}
@@ -96,8 +96,8 @@ solve_ODE<-function(U,delta,push,
 #' @param tau Numeric scalar. Correlation timescale parameter.
 #' @param nu Numeric scalar. Velocity scale parameter.
 #' @param omega Numeric scalar. Rotation parameter.
-#' @param potential_params List of parameters for the Gaussian mixture potential 
-#'   (used if \code{split_around_fixed_point=TRUE}), with elements:
+#' @param potential_params List of parameters for the Gaussian mixture potential,
+#'   with elements:
 #'   \describe{
 #'     \item{\code{alpha}}{Numeric vector of mixture weights.}
 #'     \item{\code{B}}{List of precision matrices.}
@@ -187,32 +187,34 @@ solve_SDE<-function(U,delta,tau,nu,omega,potential_params=NULL,
 #'
 #' @param n_sim number of trajectories to simulate
 #' @param sde_params List of movement parameters tau,nu,omega
-#' @param potential_params List of parameters for the potential.
-#' Only necessary when fixed_point_ind is not null, and only works with 
-#' mixture of Gaussian potentials. The list has elements 
+#' @param potential_params List of parameters for the mixture of Gaussian
+#' potential. The list has elements 
 #' \code{potential_params$alpha} which is a vector of weights, 
-#' \code{potential_params$B} which is a list of covariance matrices, 
+#' \code{potential_params$B} which is a list of precision matrices, 
 #' and \code{potential_params$x_star} which is a matrix of coordinates of each 
 #' center in the mixture.
 #' @param error_params List of parameters of the measurement error distribution
 #' @param error_dist Distribution of the measurement error. 
 #' Options are normal,scaled_t and argos
-#' @param polygon A matrix defining the boundary polygon (n x 2 coordinates)
+#' @param polygon An \code{sp::Polygon} object defining the boundary (its \code{coords} slot is used). Only used when lambda is finite
 #' @param lambda Penalization parameter.
-#' @param U0 initial state. Initial position and velocity for RACVM, 
-#' and only initial position for BM and OU
+#' @param U0 initial state: position and velocity (vector of length 4)
 #' @param N Integer, number of time steps to simulate
 #' @param dt Numeric, time step size
 #' @param scheme String, splitting scheme to use. Options are "Lie-Trotter" and "Strang"
 #' @param split_around_fixed_point Boolean whether
-#' to do the splitting adaptatively around a fixed point of the potential
+#' to do the splitting adaptatively around a fixed point of the potential.
+#' This option is still under development: unlike the default naive
+#' splitting, it does not yet scale the potential gradient and the push by
+#' \code{2*nu^2/pi} (see \code{solve_ODE}), so it simulates from a different
+#' drift than the one assumed by the filters and \code{SGD_Fisher}.
 #' @param ncores Number of cores to use for parallel simulation
 #' @param seed Random seed for reproducibility
 #'
 #' @return A dataframe containing with Nxn_sim rows with columns
 #' \itemize{
 #'   \item X1, X2: true position
-#'   \item V1, V2 : true velocity (for RACVM)
+#'   \item V1, V2 : true velocity
 #'   \item Y1, Y2 : Noisy position
 #'   \item ID : trajectory identifier
 #' }
@@ -346,9 +348,9 @@ simulate_2D_trajectory <- function(n_sim,sde_params,
 #' within a specified polygon boundary.
 #' @param data df from `simulate_2D_trajectory()`. If multiple IDs, 
 #' individual trajectories are on individual facets
-#' @param polygon SpatialPolygons object defining the boundary (from `sp` package)
-#' @param true_opacity Opacity for true trajectory line (0-1, default: 0.5)
-#' @param obs_opacity Opacity for observed trajectory line (0-1, default: 0.5)
+#' @param polygon An \code{sp::Polygon} object defining the boundary (its \code{coords} slot is used)
+#' @param true_opacity Opacity for true trajectory line (0-1, default: 0.2)
+#' @param obs_opacity Opacity for observed trajectory line (0-1, default: 0.2)
 #' @param potential_opacity Opacity for potential grid (0-1, default: 0.4)
 #' @param true_size Size of points/lines for true trajectory (default: 0.2)
 #' @param obs_size Size of points/lines for observed trajectory (default: 0.1)
@@ -360,9 +362,9 @@ simulate_2D_trajectory <- function(n_sim,sde_params,
 #' @param zoom_box should be a named list: list(xmin, xmax, ymin, ymax)
 #' @return A ggplot object showing:
 #' \itemize{
-#'   \item Polygon boundary (light blue fill)
+#'   \item Polygon boundary (grey outline)
 #'   \item True trajectory (black line and points)
-#'   \item Observed trajectory (red line and points with measurement error)
+#'   \item Observed positions (red points, linked to the true positions by red segments)
 #' }
 #' @export
 #' @details The plot helps visualize the relationship between true movement and noisy observations.

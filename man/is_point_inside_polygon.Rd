@@ -9,7 +9,7 @@ is_point_inside_polygon(x, polygon)
 \arguments{
 \item{x}{Numeric vector of length 2: coordinates of the point}
 
-\item{polygon}{SpatialPolygon object representing the polygon}
+\item{polygon}{An \code{sp::Polygon} object defining the boundary (its \code{coords} slot is used)}
 }
 \value{
 logical: TRUE if the point is inside or on the edge, FALSE otherwise

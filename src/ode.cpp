@@ -8,10 +8,21 @@ using namespace arma;
 
 
 
+//' Solve deterministic ODE part of the Langevin splitting scheme (C++ version)
+//'
+//' C++ version of \code{solve_ODE}.
+//' @param U Numeric vector of length 4: current state (position and velocity)
+//' @param delta Time step size
+//' @param push Numeric vector of length 2: push at the current position
+//' @param potential_params List with elements alpha, B and x_star of the
+//' Gaussian mixture potential
 //' @param nu Velocity scale parameter. Only used (to scale the potential
 //' gradient and the push by 2*nu^2/pi) when ind_fixed_point is NULL; see note in
 //' solve_ODE() (R/simulate.R) for why the ind_fixed_point branch does not
 //' yet apply this scaling.
+//' @param ind_fixed_point Index of the fixed point of the potential to split
+//' around, or NULL for the naive splitting
+//' @return Numeric vector of length 4: updated state after the ODE step
 // [[Rcpp::export]]
 arma::vec solve_ODE_cpp(const arma::vec& U,
                         double delta,

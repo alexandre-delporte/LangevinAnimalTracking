@@ -23,11 +23,11 @@ plot_trajectory_in_polygon(
 \item{data}{df from `simulate_2D_trajectory()`. If multiple IDs, 
 individual trajectories are on individual facets}
 
-\item{polygon}{SpatialPolygons object defining the boundary (from `sp` package)}
+\item{polygon}{An \code{sp::Polygon} object defining the boundary (its \code{coords} slot is used)}
 
-\item{true_opacity}{Opacity for true trajectory line (0-1, default: 0.5)}
+\item{true_opacity}{Opacity for true trajectory line (0-1, default: 0.2)}
 
-\item{obs_opacity}{Opacity for observed trajectory line (0-1, default: 0.5)}
+\item{obs_opacity}{Opacity for observed trajectory line (0-1, default: 0.2)}
 
 \item{potential_opacity}{Opacity for potential grid (0-1, default: 0.4)}
 
@@ -48,9 +48,9 @@ potential driving the movement}
 \value{
 A ggplot object showing:
 \itemize{
-  \item Polygon boundary (light blue fill)
+  \item Polygon boundary (grey outline)
   \item True trajectory (black line and points)
-  \item Observed trajectory (red line and points with measurement error)
+  \item Observed positions (red points, linked to the true positions by red segments)
 }
 }
 \description{

@@ -21,8 +21,8 @@ solve_ODE(
 
 \item{push}{Numeric vector of length 2. External forcing (push) on the system.}
 
-\item{potential_params}{List of parameters for the Gaussian mixture potential 
-(used if \code{split_around_fixed_point=TRUE}), with elements:
+\item{potential_params}{List of parameters for the Gaussian mixture potential,
+with elements:
 \describe{
   \item{\code{alpha}}{Numeric vector of mixture weights.}
   \item{\code{B}}{List of precision matrices.}
@@ -33,7 +33,7 @@ solve_ODE(
 potential}
 
 \item{nu}{RACVM speed parameter. Only used (to scale the potential
-gradient by \code{2*nu^2/pi}) when \code{ind_fixed_point} is NULL; see
+gradient and the push by \code{2*nu^2/pi}) when \code{ind_fixed_point} is NULL; see
 note below.}
 }
 \value{
@@ -44,11 +44,13 @@ Computes the ODE flow for one time step of the splitting scheme,
 either naively or around a fixed point of a Gaussian mixture potential.
 }
 \note{
-The potential gradient is scaled by \code{2*nu^2/pi} in the
-  non-fixed-point branch, so that the drift is
-  \code{(2*nu^2/pi) * grad(H(x))} rather than \code{grad(H(x))}
-  unscaled — this is what makes the process's stationary distribution
-  \code{exp(H(x))} independent of tau and nu (see llk_gradient.R docs).
+The potential gradient and the push are scaled by \code{2*nu^2/pi}
+  in the non-fixed-point branch, so that the drift is
+  \code{(2*nu^2/pi) * (push + grad(H(x)))} rather than
+  \code{push + grad(H(x))} unscaled — this is what makes the process's
+  stationary distribution \code{exp(H(x))} independent of tau and nu, and
+  makes the penalisation strength scale with the speed of movement (see
+  llk_gradient.R docs).
   The \code{ind_fixed_point} branch does NOT yet apply this scaling: it
   relies on an exact matrix-exponential solve in \code{solve_SDE()} for
   the local-linear part of the chosen component, and consistently scaling

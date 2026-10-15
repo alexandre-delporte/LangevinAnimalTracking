@@ -51,11 +51,7 @@ Options are normal,scaled_t and argos}
 \item{scheme}{String, splitting scheme to use. Options are "Lie-Trotter" and "Strang"}
 
 \item{split_around_fixed_point}{Boolean whether
-to do the splitting adaptatively around a fixed point of the potential.
-This option is still under development: unlike the default naive
-splitting, it does not yet scale the potential gradient and the push by
-\code{2*nu^2/pi} (see \code{solve_ODE}), so it simulates from a different
-drift than the one assumed by the filters and \code{SGD_Fisher}.}
+to do the splitting adaptatively around a fixed point of the potential.}
 
 \item{ncores}{Number of cores to use for parallel simulation}
 

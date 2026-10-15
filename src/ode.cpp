@@ -16,10 +16,8 @@ using namespace arma;
 //' @param push Numeric vector of length 2: push at the current position
 //' @param potential_params List with elements alpha, B and x_star of the
 //' Gaussian mixture potential
-//' @param nu Velocity scale parameter. Only used (to scale the potential
-//' gradient and the push by 2*nu^2/pi) when ind_fixed_point is NULL; see note in
-//' solve_ODE() (R/simulate.R) for why the ind_fixed_point branch does not
-//' yet apply this scaling.
+//' @param nu Velocity scale parameter, used to scale the nonlinear drift
+//' (potential gradient and push) by 2*nu^2/pi
 //' @param ind_fixed_point Index of the fixed point of the potential to split
 //' around, or NULL for the naive splitting
 //' @return Numeric vector of length 4: updated state after the ODE step
@@ -40,6 +38,12 @@ arma::vec solve_ODE_cpp(const arma::vec& U,
   arma::mat x_star = potential_params["x_star"];
 
   arma::vec U_hat = U; 
+
+  // Potential gradient and push both scaled by 2*nu^2/pi so the process's
+  // stationary distribution is exp(H(x)) independent of tau/nu, and the
+  // penalisation strength scales with the speed of movement; see
+  // R/llk_gradient.R docs.
+  double nu_scale = 2.0 * nu * nu / M_PI;
   
   if (ind_fixed_point.isNotNull()) {
     
@@ -66,7 +70,7 @@ arma::vec solve_ODE_cpp(const arma::vec& U,
     arma::vec tmp(U.n_elem, arma::fill::zeros);
 
     // Assign push + potential_grad to positions 3 and 4 (0-based indices 2 and 3)
-    tmp.subvec(2, 3) = gv;
+    tmp.subvec(2, 3) = nu_scale * gv;
     U_hat = U - delta * tmp;
 
   } else {
@@ -74,12 +78,6 @@ arma::vec solve_ODE_cpp(const arma::vec& U,
     // no fixed point
     IntegerVector exclude; // empty
     arma::vec potential_grad = mix_gaussian_grad_cpp(X, x_star, potential_params, exclude);
-
-    // Potential gradient and push both scaled by 2*nu^2/pi so the process's
-    // stationary distribution is exp(H(x)) independent of tau/nu, and the
-    // penalisation strength scales with the speed of movement; see
-    // R/llk_gradient.R docs.
-    double nu_scale = 2.0 * nu * nu / M_PI;
 
     // Build a vector of zeros with same length as U
     arma::vec tmp(U.n_elem, arma::fill::zeros);

@@ -32,9 +32,8 @@ with elements:
 \item{ind_fixed_point}{Index of fixed point of the mixture of gaussian
 potential}
 
-\item{nu}{RACVM speed parameter. Only used (to scale the potential
-gradient and the push by \code{2*nu^2/pi}) when \code{ind_fixed_point} is NULL; see
-note below.}
+\item{nu}{RACVM speed parameter, used to scale the nonlinear drift
+(potential gradient and push) by \code{2*nu^2/pi}.}
 }
 \value{
 Numeric vector of length 4. Updated state after ODE step.
@@ -44,17 +43,13 @@ Computes the ODE flow for one time step of the splitting scheme,
 either naively or around a fixed point of a Gaussian mixture potential.
 }
 \note{
-The potential gradient and the push are scaled by \code{2*nu^2/pi}
-  in the non-fixed-point branch, so that the drift is
-  \code{(2*nu^2/pi) * (push + grad(H(x)))} rather than
+The potential gradient and the push are scaled by \code{2*nu^2/pi},
+  so that the drift is \code{(2*nu^2/pi) * (push + grad(H(x)))} rather than
   \code{push + grad(H(x))} unscaled — this is what makes the process's
   stationary distribution \code{exp(H(x))} independent of tau and nu, and
   makes the penalisation strength scale with the speed of movement (see
-  llk_gradient.R docs).
-  The \code{ind_fixed_point} branch does NOT yet apply this scaling: it
-  relies on an exact matrix-exponential solve in \code{solve_SDE()} for
-  the local-linear part of the chosen component, and consistently scaling
-  that branch requires differentiating a matrix exponential w.r.t. nu
-  (needed for SGD), which hasn't been implemented. Do not mix
-  \code{split_around_fixed_point = TRUE} with the scaled potential.
+  llk_gradient.R docs). In the \code{ind_fixed_point} branch, the
+  nonlinear term \code{g} of the splitting around the fixed point is scaled
+  the same way, and the linear part handled by \code{solve_SDE()} uses the
+  drift matrix with bottom-left block \code{-(4*nu^2/pi)*alpha_l*B_l}.
 }

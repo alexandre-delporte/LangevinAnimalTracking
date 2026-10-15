@@ -20,24 +20,19 @@
 #'   }
 #' @param ind_fixed_point Index of fixed point of the mixture of gaussian
 #' potential
-#' @param nu RACVM speed parameter. Only used (to scale the potential
-#'   gradient and the push by \code{2*nu^2/pi}) when \code{ind_fixed_point} is NULL; see
-#'   note below.
+#' @param nu RACVM speed parameter, used to scale the nonlinear drift
+#'   (potential gradient and push) by \code{2*nu^2/pi}.
 #'
 #' @return Numeric vector of length 4. Updated state after ODE step.
-#' @note The potential gradient and the push are scaled by \code{2*nu^2/pi}
-#'   in the non-fixed-point branch, so that the drift is
-#'   \code{(2*nu^2/pi) * (push + grad(H(x)))} rather than
+#' @note The potential gradient and the push are scaled by \code{2*nu^2/pi},
+#'   so that the drift is \code{(2*nu^2/pi) * (push + grad(H(x)))} rather than
 #'   \code{push + grad(H(x))} unscaled — this is what makes the process's
 #'   stationary distribution \code{exp(H(x))} independent of tau and nu, and
 #'   makes the penalisation strength scale with the speed of movement (see
-#'   llk_gradient.R docs).
-#'   The \code{ind_fixed_point} branch does NOT yet apply this scaling: it
-#'   relies on an exact matrix-exponential solve in \code{solve_SDE()} for
-#'   the local-linear part of the chosen component, and consistently scaling
-#'   that branch requires differentiating a matrix exponential w.r.t. nu
-#'   (needed for SGD), which hasn't been implemented. Do not mix
-#'   \code{split_around_fixed_point = TRUE} with the scaled potential.
+#'   llk_gradient.R docs). In the \code{ind_fixed_point} branch, the
+#'   nonlinear term \code{g} of the splitting around the fixed point is scaled
+#'   the same way, and the linear part handled by \code{solve_SDE()} uses the
+#'   drift matrix with bottom-left block \code{-(4*nu^2/pi)*alpha_l*B_l}.
 solve_ODE<-function(U,delta,push,
                     potential_params=NULL,
                     ind_fixed_point=NULL,
@@ -69,7 +64,8 @@ solve_ODE<-function(U,delta,push,
       2*alpha_l*(e_l-1)*B_l%*%(X-x_star_l)
 
     #ODE solution
-    U_hat<-U-delta*c(0,0,gv)
+    nu_scale<-2*nu^2/pi
+    U_hat<-U-delta*nu_scale*c(0,0,gv)
   }
 
   else {
@@ -148,7 +144,7 @@ solve_SDE<-function(U,delta,tau,nu,omega,potential_params=NULL,
     B_l<-B[[l]];alpha_l<-alpha[l];x_star_l<-x_star[l,]
     
     A<-rbind(cbind(matrix(0,ncol=2,nrow=2),diag(2)),
-             cbind(-2*alpha_l*B_l,-matrix(c(1/tau,-omega,omega,1/tau),
+             cbind(-4*nu^2/pi*alpha_l*B_l,-matrix(c(1/tau,-omega,omega,1/tau),
                                           nrow=2,byrow=TRUE)))
     if (is.null(L)) {
       L<-expm(A*delta)
@@ -204,10 +200,6 @@ solve_SDE<-function(U,delta,tau,nu,omega,potential_params=NULL,
 #' @param scheme String, splitting scheme to use. Options are "Lie-Trotter" and "Strang"
 #' @param split_around_fixed_point Boolean whether
 #' to do the splitting adaptatively around a fixed point of the potential.
-#' This option is still under development: unlike the default naive
-#' splitting, it does not yet scale the potential gradient and the push by
-#' \code{2*nu^2/pi} (see \code{solve_ODE}), so it simulates from a different
-#' drift than the one assumed by the filters and \code{SGD_Fisher}.
 #' @param ncores Number of cores to use for parallel simulation
 #' @param seed Random seed for reproducibility
 #'
@@ -314,7 +306,8 @@ simulate_2D_trajectory <- function(n_sim,sde_params,
                                              exclude = l) +
               2 * alpha_l * (e_l - 1) * B_l %*% (Z[1:2] - x_star_l)
             
-            U[i+1,]<-Z-dt/2*c(0,0,new_push)-dt/2*c(0,0,grad_Z)
+            nu_scale <- 2*nu^2/pi
+            U[i+1,]<-Z-dt/2*nu_scale*c(0,0,new_push+grad_Z)
             
           } else {
 

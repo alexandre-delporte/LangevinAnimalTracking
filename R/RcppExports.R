@@ -9,10 +9,8 @@
 #' @param push Numeric vector of length 2: push at the current position
 #' @param potential_params List with elements alpha, B and x_star of the
 #' Gaussian mixture potential
-#' @param nu Velocity scale parameter. Only used (to scale the potential
-#' gradient and the push by 2*nu^2/pi) when ind_fixed_point is NULL; see note in
-#' solve_ODE() (R/simulate.R) for why the ind_fixed_point branch does not
-#' yet apply this scaling.
+#' @param nu Velocity scale parameter, used to scale the nonlinear drift
+#' (potential gradient and push) by 2*nu^2/pi
 #' @param ind_fixed_point Index of the fixed point of the potential to split
 #' around, or NULL for the naive splitting
 #' @return Numeric vector of length 4: updated state after the ODE step

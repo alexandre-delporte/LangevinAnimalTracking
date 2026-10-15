@@ -275,7 +275,9 @@ List solve_SDE_cpp(const arma::vec& U,
       // Construct drift matrix A
       arma::mat A = arma::zeros<arma::mat>(4, 4);
       A.submat(0, 2, 1, 3) = arma::eye<arma::mat>(2, 2);  // Top-right: I_2
-      A.submat(2, 0, 3, 1) = -2.0 * alpha_l * B_l;        // Bottom-left: -2*alpha*B
+      // Bottom-left: -(4*nu^2/pi)*alpha*B, the Jacobian of the scaled drift
+      // -(2*nu^2/pi)*grad(H_l) at the fixed point
+      A.submat(2, 0, 3, 1) = -4.0 * nu * nu / M_PI * alpha_l * B_l;
       
       // Bottom-right: velocity damping matrix
       arma::mat damping(2, 2);

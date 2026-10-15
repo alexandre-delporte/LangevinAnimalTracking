@@ -116,13 +116,14 @@ kalman_filter <- function(data,sde_params,potential_params=NULL,
       
       
       Atilde<-rbind(cbind(matrix(0,ncol=2,nrow=2),diag(2)),
-                    cbind(-2*alpha_l*B_l,-matrix(c(1/tau,-omega,omega,1/tau),
+                    cbind(-4*nu^2/pi*alpha_l*B_l,-matrix(c(1/tau,-omega,omega,1/tau),
                                                  nrow=2,byrow=TRUE)))
       
       expAh<-expm(Atilde*dt)
       Qtilde<-OU_cov_exact(Atilde, Gamma,dt,expAh)
       
-      U_pred <- expAh %*%(U_hat[k - 1, ]-c(x_star_l,0,0) -dt*c(0,0,gv))+c(x_star_l,0,0)
+      nu_scale <- 2*nu^2/pi
+      U_pred <- expAh %*%(U_hat[k - 1, ]-c(x_star_l,0,0) -dt*nu_scale*c(0,0,gv))+c(x_star_l,0,0)
       R_pred <- expAh %*% R %*% t(expAh) + Qtilde
       
     }
@@ -134,8 +135,7 @@ kalman_filter <- function(data,sde_params,potential_params=NULL,
 
       # Prediction step. Push and potential gradient scaled by 2*nu^2/pi so
       # that the process's stationary distribution is exp(H(x)) independent
-      # of tau/nu (see llk_gradient.R docs) — not applied in the
-      # split_around_fixed_point branch above, see solve_ODE()'s note.
+      # of tau/nu (see llk_gradient.R docs).
       nu_scale <- 2*nu^2/pi
       fv <- nu_scale*(push+mix_gaussian_grad_cpp(X_prev,x_star,list(B=B,alpha=alpha),
                                        exclude=integer(0)))
@@ -289,7 +289,7 @@ extended_kalman_filter <- function(data,sde_params,potential_hessian,
       
       
       Atilde<-rbind(cbind(matrix(0,ncol=2,nrow=2),diag(2)),
-                    cbind(-2*alpha_l*B_l,-matrix(c(1/tau,-omega,omega,1/tau),
+                    cbind(-4*nu^2/pi*alpha_l*B_l,-matrix(c(1/tau,-omega,omega,1/tau),
                                                  nrow=2,byrow=TRUE)))
       
       expAh<-expm(Atilde*dt)
@@ -304,8 +304,9 @@ extended_kalman_filter <- function(data,sde_params,potential_hessian,
         cbind(Dxgv,matrix(0, 2, 2)))
       
       #prediction
-      U_pred <- expAh %*%(U_hat[k - 1, ]-c(x_star_l,0,0) -dt*c(0,0,gv))+c(x_star_l,0,0)
-      R_pred <- expAh %*% R %*% t(expAh)+dt^2* expAh%*%G_prev%*%R%*%t(G_prev)%*%t(expAh)+
+      nu_scale <- 2*nu^2/pi
+      U_pred <- expAh %*%(U_hat[k - 1, ]-c(x_star_l,0,0) -dt*nu_scale*c(0,0,gv))+c(x_star_l,0,0)
+      R_pred <- expAh %*% R %*% t(expAh)+(dt*nu_scale)^2* expAh%*%G_prev%*%R%*%t(G_prev)%*%t(expAh)+
         Qtilde
     }
     

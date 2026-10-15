@@ -131,10 +131,10 @@ which the linear decay of the particle count reaches
 run).}
 
 \item{split_around_fixed_point}{Logical. If \code{TRUE}, the potential is
-split around its fixed point. This option is still under development:
-the fixed-point splitting does not yet scale the potential gradient and
-the push by \code{2*nu^2/pi} (see \code{solve_ODE}), so it is currently
-not implemented here and will throw an error. Default \code{FALSE}.}
+split around its fixed point. Not implemented yet: the gradient of the
+log-likelihood would require differentiating the matrix exponential of
+the drift around the fixed point w.r.t. the movement and potential
+parameters, so this throws an error. Default \code{FALSE}.}
 
 \item{verbose}{Logical. If \code{TRUE}, progress messages are printed at
 each iteration including the current learning rate, gradient, Fisher

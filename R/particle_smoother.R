@@ -1,7 +1,6 @@
 
 #' Forward filtering backward Sampling for penalised Langevin SDE 
 #' see Doucet et .al (2011) for the general algorithm.
-#' Currently, works for Strang but only with naive splitting
 #' @param data A data.frame containing observations with columns: time, Y1, Y2
 #' @param n_samples number of smoothed trajectories to sample
 #' @param forward_filter output of the particle_filter2D_cpp function. If NULL, the function
@@ -19,9 +18,6 @@
 #' @param num_particles number of particles to use in the particle filter
 #' @param scheme type of splitting scheme to apply "Lie-Trotter" or "Strang"
 #' @param split_around_fixed_point logical. If TRUE, split the SDE around the fixed point.
-#' This option is still under development: unlike the default naive splitting,
-#' it does not yet scale the potential gradient and the push by 2*nu^2/pi
-#' (see solve_ODE), so it uses a different drift than the naive splitting
 #' @param ESS_threshold threshold for effective sample size to trigger
 #' resampling in the particle filter
 #' @param verbose logical. If TRUE, print information during the computation
@@ -145,11 +141,21 @@ forward_filtering_backward_sampling <-
           push_next<-compute_push(X_next,polygon,lambda)
           # Push and gradient scaled by 2*nu^2/pi — see llk_gradient.R docs.
           nu_scale <- 2*nu^2/pi
-          potential_grad_next<-mix_gaussian_grad_cpp(X_next, x_star,
-                                                     list(B=B,alpha=alpha),
-                                                     exclude=integer(0))
+          if (split_around_fixed_point) {
+            l <- ind_fixed_point_current
+            B_l <- B[[l]]; alpha_l <- alpha[l]; x_star_l <- x_star[l,]
+            e_l <- as.numeric(exp(-t(X_next-x_star_l)%*%B_l%*%(X_next-x_star_l)))
+            grad_next <- mix_gaussian_grad_cpp(X_next, x_star,
+                                               list(B=B,alpha=alpha),
+                                               exclude=l)+
+              2*alpha_l*(e_l-1)*B_l%*%(X_next-x_star_l)
+          } else {
+            grad_next <- mix_gaussian_grad_cpp(X_next, x_star,
+                                               list(B=B,alpha=alpha),
+                                               exclude=integer(0))
+          }
 
-          V_tilde <- V_next + (delta/2) * nu_scale * (push_next + potential_grad_next)
+          V_tilde <- V_next + (delta/2) * nu_scale * (push_next + grad_next)
           U_tilde_next <- c(X_next, V_tilde)
           
           

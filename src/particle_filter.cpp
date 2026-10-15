@@ -213,6 +213,8 @@ static inline arma::vec propagate_particle_with_cache(
     arma::vec push_next = compute_push_cpp(X_next, polygon_coords, lambda);
     
     // --- Recompute gradient / nonlinear term at new position ---
+    // Push and gradient scaled by 2*nu^2/pi — see R/llk_gradient.R docs.
+    double nu_scale = 2.0 * nu * nu / M_PI;
     arma::vec grad_term(2);
     if (ind_fixed_point > 0) {
       int l = ind_fixed_point - 1;
@@ -225,13 +227,10 @@ static inline arma::vec propagate_particle_with_cache(
       
       arma::vec grad = mix_gaussian_grad_cpp(X_next, x_star, potential_params,
                                             IntegerVector::create(l+1));
-      grad_term = push_next + grad + 2.0*alpha_l*(e_l_next-1.0) * (B_l*(X_next - x_star_l));
+      grad_term = nu_scale * (push_next + grad +
+                              2.0*alpha_l*(e_l_next-1.0) * (B_l*(X_next - x_star_l)));
       
     } else {
-      // Push and gradient scaled by 2*nu^2/pi — see R/llk_gradient.R docs; not
-      // applied in the ind_fixed_point branch above, see solve_ODE()'s note
-      // (R/simulate.R).
-      double nu_scale = 2.0 * nu * nu / M_PI;
       arma::vec grad = mix_gaussian_grad_cpp(X_next, x_star, potential_params, IntegerVector());
       grad_term = nu_scale * (push_next + grad);
     }
@@ -847,9 +846,9 @@ List particle_filter2D_cpp(
 // trajectories from the smoothing distribution.
 
 // Log transition density p(U_target | U_prev) under the numerical splitting scheme.
-// Mirrors the backward-weight computation used in forward_filtering_backward_sampling() (R):
-// for Strang, the final gradient term always uses the naive (non-fixed-point) mixture
-// gradient, matching that function's documented limitation.
+// Mirrors the backward-weight computation used in forward_filtering_backward_sampling() (R).
+// For Strang, the final half ODE step is inverted with the same nonlinear term (naive or
+// around the fixed point ind_fixed_point) as in propagate_particle_with_cache().
 static inline double transition_log_density(
     const arma::vec& U_prev,
     const arma::vec& U_target,
@@ -899,9 +898,28 @@ static inline double transition_log_density(
     arma::vec push_next = compute_push_cpp(X_next, polygon_coords, lambda);
 
     double nu_scale = 2.0 * nu * nu / M_PI;
-    arma::vec grad_next = mix_gaussian_grad_cpp(X_next, x_star, potential_params, IntegerVector());
+    arma::vec grad_term(2);
+    if (ind_fixed_point > 0) {
+      arma::vec alpha = potential_params["alpha"];
+      List B = potential_params["B"];
+      int l = ind_fixed_point - 1;
+      arma::mat B_l = B[l];
+      double alpha_l = alpha[l];
+      arma::vec x_star_l = x_star.row(l).t();
 
-    arma::vec V_tilde = V_next + (delta / 2.0) * nu_scale * (push_next + grad_next);
+      double e_l_next = std::exp(-arma::dot(X_next - x_star_l,
+                                            B_l * (X_next - x_star_l)));
+
+      arma::vec grad = mix_gaussian_grad_cpp(X_next, x_star, potential_params,
+                                            IntegerVector::create(l+1));
+      grad_term = nu_scale * (push_next + grad +
+                              2.0*alpha_l*(e_l_next-1.0) * (B_l*(X_next - x_star_l)));
+    } else {
+      arma::vec grad = mix_gaussian_grad_cpp(X_next, x_star, potential_params, IntegerVector());
+      grad_term = nu_scale * (push_next + grad);
+    }
+
+    arma::vec V_tilde = V_next + (delta / 2.0) * grad_term;
     arma::vec U_tilde_next = arma::join_vert(X_next, V_tilde);
 
     return log_dmvnorm_chol_cpp(U_tilde_next, mean, chol_cpp(Q));

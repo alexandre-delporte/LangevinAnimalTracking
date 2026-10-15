@@ -3,8 +3,7 @@
 \name{forward_filtering_backward_sampling}
 \alias{forward_filtering_backward_sampling}
 \title{Forward filtering backward Sampling for penalised Langevin SDE 
-see Doucet et .al (2011) for the general algorithm.
-Currently, works for Strang but only with naive splitting}
+see Doucet et .al (2011) for the general algorithm.}
 \usage{
 forward_filtering_backward_sampling(
   data,
@@ -55,10 +54,7 @@ Can be NULL when lambda = Inf (no domain penalisation)}
 
 \item{scheme}{type of splitting scheme to apply "Lie-Trotter" or "Strang"}
 
-\item{split_around_fixed_point}{logical. If TRUE, split the SDE around the fixed point.
-This option is still under development: unlike the default naive splitting,
-it does not yet scale the potential gradient and the push by 2*nu^2/pi
-(see solve_ODE), so it uses a different drift than the naive splitting}
+\item{split_around_fixed_point}{logical. If TRUE, split the SDE around the fixed point.}
 
 \item{ESS_threshold}{threshold for effective sample size to trigger
 resampling in the particle filter}
@@ -78,5 +74,4 @@ with the smoothed trajectories
 \description{
 Forward filtering backward Sampling for penalised Langevin SDE 
 see Doucet et .al (2011) for the general algorithm.
-Currently, works for Strang but only with naive splitting
 }

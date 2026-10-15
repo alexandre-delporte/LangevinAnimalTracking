@@ -306,8 +306,8 @@ extended_kalman_filter <- function(data,sde_params,potential_hessian,
       #prediction
       nu_scale <- 2*nu^2/pi
       U_pred <- expAh %*%(U_hat[k - 1, ]-c(x_star_l,0,0) -dt*nu_scale*c(0,0,gv))+c(x_star_l,0,0)
-      R_pred <- expAh %*% R %*% t(expAh)+(dt*nu_scale)^2* expAh%*%G_prev%*%R%*%t(G_prev)%*%t(expAh)+
-        Qtilde
+      J_prev <- expAh %*% (diag(4) - dt*nu_scale*G_prev)
+      R_pred <- J_prev %*% R %*% t(J_prev) + Qtilde
     }
     
     else {
@@ -328,7 +328,8 @@ extended_kalman_filter <- function(data,sde_params,potential_hessian,
     
       #prediction
       U_pred <- L %*% U_hat[k - 1, ] -dt*L%*% f_prev
-      R_pred <- L %*% R %*% t(L) +dt^2*L%*% F_prev %*% R %*% t(F_prev) %*% t(L) + Q
+      J_prev <- L %*% (diag(4) - dt*F_prev)
+      R_pred <- J_prev %*% R %*% t(J_prev) + Q
     }
     
       # correction

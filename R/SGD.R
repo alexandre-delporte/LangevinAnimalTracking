@@ -168,7 +168,7 @@
 SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
                        potential_params = NULL, estimate_potential_params = FALSE,
                        estimate_centers = FALSE,
-                       error_dist, error_params,
+                       error_dist, error_params = NULL,
                        scheme = "Lie-Trotter", polygon = NULL, U0, lambda = Inf,
                        num_particles, num_particles_min = num_particles,
                        num_particles_decay_iter = SGD_iter,
@@ -181,6 +181,10 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
 
   if (split_around_fixed_point) {
     stop("Not implemented yet with splitting around fixed point")
+  }
+
+  if (is.null(error_params) && is.null(error_params_per_obs)) {
+    stop("error_params must be provided when error_params_per_obs is NULL")
   }
 
   if (estimate_centers && !estimate_potential_params) {

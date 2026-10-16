@@ -14,7 +14,7 @@ SGD_Fisher(
   estimate_potential_params = FALSE,
   estimate_centers = FALSE,
   error_dist,
-  error_params,
+  error_params = NULL,
   scheme = "Lie-Trotter",
   polygon = NULL,
   U0,

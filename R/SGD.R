@@ -518,3 +518,411 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
     smooth_samples = if (n_smooth_samples > 0) smooth_samples else NULL
   ))
 }
+
+#' Stochastic Gradient Ascent with Adam for SDE parameter estimation
+#'
+#' Same stochastic approximation scheme as \code{\link{SGD_Fisher}} (a latent
+#' trajectory is drawn at each iteration by FFBS or CPF-AS, and the gradient
+#' of the complete-data log-likelihood is computed on it), but the parameters
+#' are updated with the Adam optimiser (Kingma and Ba, 2015) instead of the
+#' Fisher-preconditioned step. The Fisher information matrix is still estimated
+#' across iterations, with the same per-step score stochastic approximation
+#' \eqn{I = \Delta^\top \Delta} as in \code{SGD_Fisher}, but it never enters
+#' the updates, so a poorly estimated (near singular) FIM cannot make the
+#' algorithm diverge. It is returned for computing standard errors at the end.
+#'
+#' The Adam step size schedule has two phases: a constant phase at \code{lr},
+#' followed by a Robbins-Monro decreasing phase
+#' \eqn{lr_k = lr\,(k - K_{\text{decay}} + 1)^{-\alpha_{\text{decay}}}}. The
+#' start of the decreasing phase \eqn{K_{\text{decay}}} is either given by
+#' \code{K_decay}, or detected automatically, after at least
+#' \code{K_constant_min} iterations, as the iteration at which the norm of the
+#' 3rd-order exponentially filtered gradient stops decreasing (same criterion
+#' as the end of the heating phase in \code{SGD_Fisher}).
+#'
+#' Since Adam normalises each coordinate of the gradient, the step taken on
+#' each parameter is of order \code{lr} in the units of that parameter, whatever
+#' the scale of the gradient. \code{lr} should therefore be chosen relative to
+#' the scale of the parameters, and can be given per parameter.
+#'
+#' @inheritParams SGD_Fisher
+#' @param lr A positive scalar, or a named numeric vector with one entry per
+#'   estimated parameter (names as in the columns of the output \code{theta},
+#'   e.g. \code{tau}, \code{nu}, \code{omega}, \code{alpha_1}, \code{logL11_1},
+#'   ...), giving the Adam step size during the constant phase. Default
+#'   \code{0.01}.
+#' @param beta1,beta2 Exponential decay rates of the Adam first and second
+#'   moment estimates. Defaults \code{0.9} and \code{0.999}.
+#' @param eps Small constant added to the denominator of the Adam step.
+#'   Default \code{1e-8}.
+#' @param K_constant_min A positive integer giving the minimum number of
+#'   iterations at constant step size before the automatic detection of the
+#'   start of the decreasing phase is switched on. Ignored if \code{K_decay}
+#'   is given. Default \code{200}.
+#' @param K_decay Optional positive integer giving the iteration at which the
+#'   decreasing phase starts. If \code{NULL} (default), it is detected
+#'   automatically with the filtered gradient criterion.
+#' @param alpha_decay A scalar in \eqn{(1/2, 1]} giving the decay rate of the
+#'   step size in the decreasing phase. Default \code{2/3}.
+#' @param C_heating Smoothing constant of the 3rd-order exponential mean
+#'   filter applied to the gradient to detect the start of the decreasing
+#'   phase. Default \code{1/100}.
+#' @param fisher_rate A scalar in \eqn{(0, 1]} giving the weight of the
+#'   stochastic approximation of the per-step scores \eqn{\Delta} during the
+#'   constant phase (exponential moving average with memory of about
+#'   \code{1/fisher_rate} iterations). During the decreasing phase the weight
+#'   decreases as \eqn{1/(k - K_{\text{decay}} + 1/\text{fisher\_rate})}, so
+#'   that \eqn{\Delta} becomes a running average of the scores over the
+#'   decreasing phase. Default \code{0.05}.
+#'
+#' @return A named list with the following elements:
+#' \describe{
+#'   \item{\code{theta}}{A matrix of dimension \code{(SGD_iter + 1)}
+#'     \eqn{\times} \code{p} of the parameter estimates at each iteration.}
+#'   \item{\code{Delta}}{The \code{(n - 1)} \eqn{\times} \code{p} matrix of
+#'     the stochastic approximation of the per-step scores at the final
+#'     iteration.}
+#'   \item{\code{fisher}}{The final estimate of the Fisher information
+#'     matrix \eqn{\Delta^\top \Delta} (rows and columns of fixed parameters
+#'     are zero).}
+#'   \item{\code{fisher_min_eigen}}{A vector of length \code{SGD_iter} with
+#'     the smallest eigenvalue of the FIM estimate (restricted to the free
+#'     parameters) at each iteration, to monitor its stabilisation.}
+#'   \item{\code{grad}}{A matrix of dimension \code{SGD_iter} \eqn{\times}
+#'     \code{p} with the stochastic gradient at each iteration.}
+#'   \item{\code{K_decay}}{The iteration at which the decreasing phase
+#'     started, \code{NA} if it had not started when the algorithm
+#'     terminated.}
+#'   \item{\code{smooth_samples}}{As in \code{\link{SGD_Fisher}}.}
+#' }
+#'
+#' @references Kingma, D. P. and Ba, J. (2015). Adam: A method for
+#'   stochastic optimization. ICLR.
+#'
+#' @export
+SGD_adam <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
+                     potential_params = NULL, estimate_potential_params = FALSE,
+                     estimate_centers = FALSE,
+                     error_dist, error_params = NULL,
+                     scheme = "Lie-Trotter", polygon = NULL, U0, lambda = Inf,
+                     num_particles, num_particles_min = num_particles,
+                     num_particles_decay_iter = SGD_iter,
+                     split_around_fixed_point = FALSE,
+                     verbose = FALSE, lr = 0.01, beta1 = 0.9, beta2 = 0.999,
+                     eps = 1e-8, K_constant_min = 200, K_decay = NULL,
+                     alpha_decay = 2/3, C_heating = 1/100, fisher_rate = 0.05,
+                     n_smooth_samples = 0,
+                     error_params_per_obs = NULL, smoothing_method = "CPF",
+                     n_sweeps_cpf = 1,
+                     init_trajectory = NULL) {
+
+  if (split_around_fixed_point) {
+    stop("Not implemented yet with splitting around fixed point")
+  }
+
+  if (is.null(error_params) && is.null(error_params_per_obs)) {
+    stop("error_params must be provided when error_params_per_obs is NULL")
+  }
+
+  if (estimate_centers && !estimate_potential_params) {
+    stop("estimate_centers = TRUE requires estimate_potential_params = TRUE")
+  }
+
+  if (is.null(potential_params)) {
+    if (estimate_potential_params) {
+      stop("potential_params must be provided when estimate_potential_params = TRUE")
+    }
+    potential_params <- list(x_star = matrix(0, 1, 2), B = list(diag(2)), alpha = 0)
+  }
+
+  smoothing_method <- match.arg(smoothing_method, c("FFBS", "CPF"))
+
+  if (is.null(polygon) && is.finite(lambda)) {
+    stop("polygon must be provided when lambda is finite")
+  }
+  polygon_coords <- if (is.null(polygon)) matrix(numeric(0), 0, 2) else polygon@coords
+  ref_traj_cpf <- init_trajectory
+
+  x_star    <- potential_params$x_star
+  param_names <- names(sde_params)
+  if (is.null(param_names)) stop("sde_params must be a named list")
+
+  if (estimate_potential_params) {
+    J <- length(potential_params$alpha)
+    xi_names <- c(paste0("alpha_", 1:J),
+                  unlist(lapply(1:J, function(j) paste0(c("logL11","L21","logL22"), "_", j))))
+    xi_init <- c(potential_params$alpha,
+                 unlist(lapply(potential_params$B, function(Bk) {
+                   Lk <- t(chol(Bk))
+                   c(log(Lk[1, 1]), Lk[2, 1], log(Lk[2, 2]))
+                 })))
+    if (estimate_centers) {
+      xstar_names <- unlist(lapply(1:J, function(j) paste0("xstar_", j, "_", 1:2)))
+      xi_names <- c(xi_names, xstar_names)
+      xi_init  <- c(xi_init, as.vector(t(x_star)))
+    }
+    param_names <- c(param_names, xi_names)
+    theta_init <- c(unlist(sde_params), xi_init)
+  } else {
+    J <- 0
+    theta_init <- unlist(sde_params)
+  }
+
+  p        <- length(param_names)
+  fix_idx  <- which(param_names %in% fixpar)
+  free_idx <- setdiff(seq_len(p), fix_idx)
+
+  # Per-parameter base step size
+  if (length(lr) == 1 && is.null(names(lr))) {
+    lr_vec <- rep(lr, p)
+  } else {
+    missing_lr <- setdiff(param_names[free_idx], names(lr))
+    if (length(missing_lr) > 0) {
+      stop("lr is missing entries for: ", paste(missing_lr, collapse = ", "))
+    }
+    lr_vec <- rep(0, p)
+    lr_vec[free_idx] <- lr[param_names[free_idx]]
+  }
+  names(lr_vec) <- param_names
+
+  theta <- matrix(0, nrow = SGD_iter + 1, ncol = p)
+  colnames(theta) <- param_names
+  theta[1, ] <- theta_init
+
+  grad_hist <- matrix(NA_real_, nrow = SGD_iter, ncol = p)
+  colnames(grad_hist) <- param_names
+  fisher_min_eigen <- rep(NA_real_, SGD_iter)
+
+  n     <- nrow(data)
+  Delta <- matrix(0, ncol = p, nrow = n - 1)
+
+  # Adam moments
+  m_adam <- numeric(p)
+  v_adam <- numeric(p)
+
+  # Decreasing phase detection (3rd-order exponential mean filter on gradient)
+  decay_started           <- FALSE
+  K_decay_used            <- NA
+  grad_filter             <- NULL
+  grad_norm_filtered      <- NA
+  grad_norm_filtered_prev <- NA
+
+  smooth_samples <- list()
+
+  for (k in 1:SGD_iter) {
+    if (verbose) message("SGD iter ", k, "\n")
+
+    frac_k <- min(1, (k - 1) / max(1, num_particles_decay_iter - 1))
+    num_particles_k <- round(num_particles + frac_k * (num_particles_min - num_particles))
+
+    sde_params_k <- as.list(theta[k, c("tau", "nu", "omega")])
+
+    if (estimate_potential_params) {
+      alpha_k <- theta[k, paste0("alpha_", 1:J)]
+      B_k <- lapply(1:J, function(j) {
+        l  <- theta[k, paste0(c("logL11", "L21", "logL22"), "_", j)]
+        Lj <- matrix(c(exp(l[1]), l[2], 0, exp(l[3])), 2, 2)
+        Lj %*% t(Lj)
+      })
+      if (estimate_centers) {
+        x_star_k <- matrix(NA_real_, nrow = J, ncol = 2)
+        for (j in 1:J) {
+          x_star_k[j, ] <- theta[k, paste0("xstar_", j, "_", 1:2)]
+        }
+      } else {
+        x_star_k <- x_star
+      }
+      potential_params_k <- list(alpha = alpha_k, B = B_k, x_star = x_star_k)
+    } else {
+      potential_params_k <- potential_params
+      x_star_k <- x_star
+    }
+
+    if (smoothing_method == "FFBS") {
+
+      filter <- particle_filter2D_cpp(
+        observations     = as.matrix(data[, c("time", "Y1", "Y2")]),
+        sde_params       = sde_params_k,
+        potential_params = potential_params_k,
+        error_params     = error_params,
+        error_dist       = error_dist,
+        polygon_coords   = polygon_coords,
+        U0 = U0, lambda = lambda,
+        num_particles    = num_particles_k,
+        split_around_fixed_point = split_around_fixed_point,
+        scheme = scheme, ESS_threshold = 0.8,
+        verbose = FALSE, print_timing = FALSE,
+        error_params_per_obs = error_params_per_obs
+      )
+
+      backward_samples <- forward_filtering_backward_sampling(
+        data, 1, forward_filter = filter,
+        sde_params_k, potential_params_k,
+        error_params, error_dist, polygon,
+        U0, lambda, num_particles_k,
+        scheme = scheme,
+        split_around_fixed_point = FALSE,
+        verbose = FALSE,
+        error_params_per_obs = error_params_per_obs
+      )
+      z <- t(apply(backward_samples, c(2, 3), mean))
+      colnames(z) <- c("X1", "X2", "V1", "V2")
+
+    } else { # smoothing_method == "CPF"
+
+      if (is.null(ref_traj_cpf)) {
+        filter0 <- particle_filter2D_cpp(
+          observations     = as.matrix(data[, c("time", "Y1", "Y2")]),
+          sde_params       = sde_params_k,
+          potential_params = potential_params_k,
+          error_params     = error_params,
+          error_dist       = error_dist,
+          polygon_coords   = polygon_coords,
+          U0 = U0, lambda = lambda,
+          num_particles    = num_particles_k,
+          split_around_fixed_point = split_around_fixed_point,
+          scheme = scheme, ESS_threshold = 0.8,
+          verbose = FALSE, print_timing = FALSE,
+          error_params_per_obs = error_params_per_obs
+        )
+        seed_sample <- forward_filtering_backward_sampling(
+          data, 1, forward_filter = filter0,
+          sde_params_k, potential_params_k,
+          error_params, error_dist, polygon,
+          U0, lambda, num_particles_k,
+          scheme = scheme,
+          split_around_fixed_point = FALSE,
+          verbose = FALSE,
+          error_params_per_obs = error_params_per_obs
+        )
+        ref_traj_cpf <- t(seed_sample[1, , ])
+      }
+
+      cpf_out <- conditional_particle_filter_cpp(
+        observations     = as.matrix(data[, c("time", "Y1", "Y2")]),
+        sde_params       = sde_params_k,
+        potential_params = potential_params_k,
+        error_params     = error_params,
+        error_dist       = error_dist,
+        polygon_coords   = polygon_coords,
+        U0 = U0, lambda = lambda,
+        num_particles    = num_particles_k,
+        scheme = scheme,
+        split_around_fixed_point = split_around_fixed_point,
+        reference_trajectory = ref_traj_cpf,
+        n_sweeps = n_sweeps_cpf,
+        ESS_threshold = 0.8,
+        error_params_per_obs = error_params_per_obs
+      )
+
+      z <- cpf_out$trajectory
+      ref_traj_cpf <- z
+      colnames(z) <- c("X1", "X2", "V1", "V2")
+    }
+
+    push_mat           <- matrix(NA, nrow = n, ncol = 2)
+    potential_grad_mat <- matrix(NA, nrow = n, ncol = 2)
+    for (t in 1:n) {
+      X <- z[t, c("X1", "X2")]
+      push_mat[t, ]           <- compute_push_cpp(as.numeric(X), polygon_coords, lambda)
+      potential_grad_mat[t, ] <- mix_gaussian_grad_cpp(
+        X, x_star_k, list(B = potential_params_k$B, alpha = potential_params_k$alpha),
+        exclude = integer(0)
+      )
+    }
+
+    z_df      <- as.data.frame(z)
+    z_df$time <- data$time
+
+    grad_mat <- llk_gradient(
+      data = z_df, push_mat = push_mat,
+      potential_grad_mat = potential_grad_mat,
+      tau = theta[k, "tau"], nu = theta[k, "nu"],
+      omega = theta[k, "omega"], scheme = scheme,
+      potential_params = if (estimate_potential_params) potential_params_k else NULL,
+      estimate_centers = estimate_centers,
+      verbose = FALSE
+    )
+
+    # Fixed parameters: zero their per-step scores at the source (see SGD_Fisher)
+    if (length(fix_idx) > 0) grad_mat[, fix_idx] <- 0
+
+    g_k <- colSums(grad_mat)
+    names(g_k) <- param_names
+    grad_hist[k, ] <- g_k
+
+    # --- Start of the decreasing phase ---
+    if (!decay_started) {
+      if (!is.null(K_decay)) {
+        if (k >= K_decay) {
+          decay_started <- TRUE
+          K_decay_used  <- k
+        }
+      } else if (k >= K_constant_min) {
+        if (is.null(grad_filter)) {
+          grad_filter <- list(g_k, g_k, g_k)
+        } else {
+          grad_filter[[1]] <- (1 - C_heating) * grad_filter[[1]] + C_heating * g_k
+          grad_filter[[2]] <- (1 - C_heating) * grad_filter[[2]] + C_heating * grad_filter[[1]]
+          grad_filter[[3]] <- (1 - C_heating) * grad_filter[[3]] + C_heating * grad_filter[[2]]
+        }
+        grad_norm_filtered_prev <- grad_norm_filtered
+        grad_norm_filtered      <- sqrt(sum(grad_filter[[3]]^2))
+        if (!is.na(grad_norm_filtered_prev) &&
+            grad_norm_filtered >= grad_norm_filtered_prev) {
+          decay_started <- TRUE
+          K_decay_used  <- k
+        }
+      }
+      if (decay_started && verbose) message("Decreasing phase started at iteration ", k, "\n")
+    }
+
+    # --- Step size schedule ---
+    if (!decay_started) {
+      lr_scale_k <- 1
+      gamma_F_k  <- max(1 / k, fisher_rate)
+    } else {
+      lr_scale_k <- (k - K_decay_used + 1)^(-alpha_decay)
+      gamma_F_k  <- 1 / (k - K_decay_used + 1 / fisher_rate)
+    }
+
+    # --- Fisher information estimate (not used in the update) ---
+    Delta <- (1 - gamma_F_k) * Delta + gamma_F_k * grad_mat
+    I_k   <- crossprod(Delta)
+    fisher_min_eigen[k] <- min(eigen(I_k[free_idx, free_idx, drop = FALSE],
+                                     symmetric = TRUE, only.values = TRUE)$values)
+
+    # --- Adam update (gradient ascent on the log-likelihood) ---
+    m_adam <- beta1 * m_adam + (1 - beta1) * g_k
+    v_adam <- beta2 * v_adam + (1 - beta2) * g_k^2
+    m_hat  <- m_adam / (1 - beta1^k)
+    v_hat  <- v_adam / (1 - beta2^k)
+    step   <- lr_scale_k * lr_vec * m_hat / (sqrt(v_hat) + eps)
+    step[fix_idx] <- 0
+    theta[k + 1, ] <- theta[k, ] + step
+
+    if (n_smooth_samples > 0 && k > SGD_iter - n_smooth_samples) {
+      smooth_samples <- c(smooth_samples, list(z))
+    }
+
+    if (verbose) {
+      message("grad: ",  paste(round(g_k, 4), collapse = " "), "\n")
+      message("step: ",  paste(signif(step, 4), collapse = " "), "\n")
+      message("min eigenvalue I_k: ", signif(fisher_min_eigen[k], 4), "\n")
+      message("theta: ", paste(round(theta[k + 1, ], 4), collapse = " "), "\n")
+    }
+  }
+
+  fisher <- crossprod(Delta)
+  dimnames(fisher) <- list(param_names, param_names)
+
+  return(list(
+    theta            = theta,
+    Delta            = Delta,
+    fisher           = fisher,
+    fisher_min_eigen = fisher_min_eigen,
+    grad             = grad_hist,
+    K_decay          = K_decay_used,
+    smooth_samples   = if (n_smooth_samples > 0) smooth_samples else NULL
+  ))
+}

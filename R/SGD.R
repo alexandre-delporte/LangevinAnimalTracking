@@ -136,6 +136,15 @@
 #'   run per SGD iteration when \code{smoothing_method = "CPF"}. Default
 #'   \code{1} (one sweep per iteration, relying on warm-starting across SGD
 #'   iterations for mixing).
+#' @param progress_every A non-negative integer. If greater than 0, a one-line
+#'   progress message (iteration, phase of the step-size schedule, elapsed
+#'   time and current parameters) is printed every \code{progress_every}
+#'   iterations and at the last iteration, independently of \code{verbose}.
+#'   Useful to follow long runs in a log file. Default \code{0} (no progress
+#'   messages).
+#' @param label An optional character string prepended to the progress
+#'   messages, e.g. \code{"seed 42"}, to tell apart replicates run in
+#'   parallel. Default \code{NULL}.
 #' @param init_trajectory An optional \code{n x 4} matrix giving the initial
 #'   conditioning trajectory for the CPF-AS chain (columns \code{X1, X2, V1,
 #'   V2}). Only used when \code{smoothing_method = "CPF"}. If \code{NULL}
@@ -177,7 +186,8 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
                        alpha_decay = 2/3, C_heating = 1/100, n_smooth_samples = 0,
                        error_params_per_obs = NULL, smoothing_method = "CPF",
                        n_sweeps_cpf = 1,
-                       init_trajectory = NULL) {
+                       init_trajectory = NULL,
+                       progress_every = 0, label = NULL) {
 
   if (split_around_fixed_point) {
     stop("Not implemented yet with splitting around fixed point")
@@ -256,6 +266,8 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
   # Storage for the last n_smooth_samples trajectories
   smooth_samples <- list()
   
+  t_start <- Sys.time()
+
   for (k in 1:SGD_iter) {
     if (verbose) message("SGD iter ", k, "\n")
 
@@ -486,6 +498,11 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
       }
     }
     
+    if (progress_every > 0 && (k %% progress_every == 0 || k == SGD_iter)) {
+      phase <- if (k < K_preheat) "pre-heating" else if (!heating_finished) "heating" else "decreasing"
+      sgd_progress_message(label, k, SGD_iter, phase, theta[k + 1, ], t_start)
+    }
+
     # Save the trajectory from this iteration if we are in the last
     # n_smooth_samples iterations
     if (n_smooth_samples > 0 && k > SGD_iter - n_smooth_samples) {
@@ -614,7 +631,8 @@ SGD_adam <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
                      n_smooth_samples = 0,
                      error_params_per_obs = NULL, smoothing_method = "CPF",
                      n_sweeps_cpf = 1,
-                     init_trajectory = NULL) {
+                     init_trajectory = NULL,
+                     progress_every = 0, label = NULL) {
 
   if (split_around_fixed_point) {
     stop("Not implemented yet with splitting around fixed point")
@@ -708,6 +726,8 @@ SGD_adam <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
   grad_norm_filtered_prev <- NA
 
   smooth_samples <- list()
+
+  t_start <- Sys.time()
 
   for (k in 1:SGD_iter) {
     if (verbose) message("SGD iter ", k, "\n")
@@ -901,6 +921,11 @@ SGD_adam <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
     step[fix_idx] <- 0
     theta[k + 1, ] <- theta[k, ] + step
 
+    if (progress_every > 0 && (k %% progress_every == 0 || k == SGD_iter)) {
+      phase <- if (decay_started) "decreasing" else "constant"
+      sgd_progress_message(label, k, SGD_iter, phase, theta[k + 1, ], t_start)
+    }
+
     if (n_smooth_samples > 0 && k > SGD_iter - n_smooth_samples) {
       smooth_samples <- c(smooth_samples, list(z))
     }
@@ -925,4 +950,21 @@ SGD_adam <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
     K_decay          = K_decay_used,
     smooth_samples   = if (n_smooth_samples > 0) smooth_samples else NULL
   ))
+}
+
+
+#' One-line progress message for the SGD algorithms
+#'
+#' Prints the label, iteration, phase of the step-size schedule, elapsed time
+#' and current parameters (4 significant digits). Used by
+#' \code{\link{SGD_Fisher}} and \code{\link{SGD_adam}} when
+#' \code{progress_every > 0}.
+#'
+#' @noRd
+sgd_progress_message <- function(label, k, SGD_iter, phase, theta_k, t_start) {
+  elapsed <- as.numeric(difftime(Sys.time(), t_start, units = "mins"))
+  message(sprintf("%siter %d/%d (%s, %.1f min) theta: %s",
+                  if (is.null(label)) "" else paste0("[", label, "] "),
+                  k, SGD_iter, phase, elapsed,
+                  paste(names(theta_k), signif(theta_k, 4), sep = "=", collapse = " ")))
 }

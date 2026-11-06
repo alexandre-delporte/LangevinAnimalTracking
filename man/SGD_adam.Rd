@@ -36,7 +36,9 @@ SGD_adam(
   error_params_per_obs = NULL,
   smoothing_method = "CPF",
   n_sweeps_cpf = 1,
-  init_trajectory = NULL
+  init_trajectory = NULL,
+  progress_every = 0,
+  label = NULL
 )
 }
 \arguments{
@@ -213,6 +215,17 @@ conditioning trajectory for the CPF-AS chain (columns \code{X1, X2, V1,
 V2}). Only used when \code{smoothing_method = "CPF"}. If \code{NULL}
 (default), an initial trajectory is drawn via a single FFBS sample before
 the first SGD iteration.}
+
+\item{progress_every}{A non-negative integer. If greater than 0, a one-line
+progress message (iteration, phase of the step-size schedule, elapsed
+time and current parameters) is printed every \code{progress_every}
+iterations and at the last iteration, independently of \code{verbose}.
+Useful to follow long runs in a log file. Default \code{0} (no progress
+messages).}
+
+\item{label}{An optional character string prepended to the progress
+messages, e.g. \code{"seed 42"}, to tell apart replicates run in
+parallel. Default \code{NULL}.}
 }
 \value{
 A named list with the following elements:

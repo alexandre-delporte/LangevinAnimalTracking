@@ -341,20 +341,98 @@ choose_center <- function(x, x_star, params) {
 #'   whose few points would otherwise give an unreliable per-well
 #'   covariance/alpha estimate
 #' @param verbose logical. If TRUE (default), report the number of clusters found
+#' @param smooth logical. If \code{FALSE} (default), HDBSCAN is run on the
+#'   observed positions. If \code{TRUE}, the observations are first smoothed
+#'   with \code{\link{forward_filtering_backward_sampling}} without potential
+#'   (using \code{sde_params}, e.g. the Kalman filter estimates, the
+#'   observation error model and the domain), the smoothed positions are
+#'   averaged over \code{n_smooth_samples} trajectories at each observation
+#'   time, and the mean track is linearly interpolated on a regular time grid
+#'   with step \code{interp_step}. HDBSCAN is then run on the grid points.
+#'   This removes the observation error from the clusters and weights each
+#'   area by the time spent there rather than by its number of observations
+#'   (which depends on the sampling rate). \code{minPts} and \code{min_size}
+#'   are given in numbers of observations, as when \code{smooth = FALSE}, and
+#'   are multiplied by (number of grid points) / (number of observations).
+#' @param sde_params Named list of SDE parameters (\code{tau}, \code{nu},
+#'   \code{omega}) used for smoothing. Required when \code{smooth = TRUE}.
+#' @param error_dist,error_params,error_params_per_obs Observation error
+#'   model, as in \code{\link{forward_filtering_backward_sampling}}. Used only
+#'   when \code{smooth = TRUE}.
+#' @param polygon,lambda Domain and penalisation parameter, as in
+#'   \code{\link{forward_filtering_backward_sampling}}. Used only when
+#'   \code{smooth = TRUE}. Default: no domain (\code{polygon = NULL},
+#'   \code{lambda = Inf}).
+#' @param U0 Initial state \eqn{(x_1, x_2, v_1, v_2)}. Used only when
+#'   \code{smooth = TRUE}. Defaults to the first observed position with zero
+#'   velocity.
+#' @param num_particles Number of particles of the smoother. Default 300.
+#' @param n_smooth_samples Number of smoothed trajectories averaged. Default 10.
+#' @param interp_step Time step of the interpolation grid, in the units of
+#'   \code{data$time} (hours for the bowhead data). Default 1.
+#' @param scheme Numerical scheme of the smoother. Default \code{"Lie-Trotter"}.
 #'
 #' @return A list with elements \code{x_star} (J x 2 matrix of cluster
 #'   centroids), \code{B} (list of J precision matrices) and \code{alpha}
-#'   (vector of length J), ready to use as \code{potential_params}
+#'   (vector of length J), ready to use as \code{potential_params}. When
+#'   \code{smooth = TRUE}, the interpolated smoothed track (data frame with
+#'   columns \code{time}, the two \code{coords} and \code{cluster}, 0 for
+#'   noise) is attached as attribute \code{"smoothed_track"}.
 #' @export
 init_potential_params_hdbscan <- function(data, coords = c("Y1", "Y2"),
                                            minPts = NULL, alpha_init = 0,
-                                           min_size = 1, verbose = TRUE) {
+                                           min_size = 1, verbose = TRUE,
+                                           smooth = FALSE, sde_params = NULL,
+                                           error_dist = NULL, error_params = NULL,
+                                           error_params_per_obs = NULL,
+                                           polygon = NULL, lambda = Inf, U0 = NULL,
+                                           num_particles = 300,
+                                           n_smooth_samples = 10,
+                                           interp_step = 1,
+                                           scheme = "Lie-Trotter") {
 
   if (!requireNamespace("dbscan", quietly = TRUE)) {
     stop("Package 'dbscan' is required for init_potential_params_hdbscan().")
   }
 
   coords_all <- as.matrix(data[, coords])
+
+  if (smooth) {
+    if (is.null(sde_params)) stop("sde_params must be provided when smooth = TRUE")
+    if (is.null(error_dist)) stop("error_dist must be provided when smooth = TRUE")
+    if (!"time" %in% names(data)) stop("data must have a 'time' column when smooth = TRUE")
+    n_obs <- nrow(coords_all)
+    obs <- data.frame(time = data$time, Y1 = coords_all[, 1], Y2 = coords_all[, 2])
+    if (is.null(U0)) U0 <- c(coords_all[1, ], 0, 0)
+
+    ## Smoothing without potential, mean of the smoothed positions at each
+    ## observation time
+    sm <- forward_filtering_backward_sampling(
+      data = obs, n_samples = n_smooth_samples, sde_params = sde_params,
+      potential_params = NULL, error_params = error_params,
+      error_dist = error_dist, polygon = polygon, U0 = U0, lambda = lambda,
+      num_particles = num_particles, scheme = scheme,
+      error_params_per_obs = error_params_per_obs)
+    mean_x <- apply(sm[, 1, , drop = FALSE], 3, mean)
+    mean_y <- apply(sm[, 2, , drop = FALSE], 3, mean)
+
+    ## Linear interpolation on a regular time grid
+    grid_time  <- seq(min(obs$time), max(obs$time), by = interp_step)
+    coords_all <- cbind(stats::approx(obs$time, mean_x, grid_time)$y,
+                        stats::approx(obs$time, mean_y, grid_time)$y)
+    colnames(coords_all) <- coords
+
+    ## minPts / min_size given per observation: rescale to the grid
+    ratio <- nrow(coords_all) / n_obs
+    if (!is.null(minPts)) minPts <- max(2, round(minPts * ratio))
+    if (min_size > 1) min_size <- round(min_size * ratio)
+    if (verbose) {
+      message("Smoothed track interpolated every ", interp_step, " time unit(s): ",
+              nrow(coords_all), " points (", round(ratio, 2), " x the ", n_obs,
+              " observations); minPts = ", if (is.null(minPts)) "default" else minPts,
+              ", min_size = ", min_size)
+    }
+  }
 
   if (is.null(minPts)) {
     minPts <- max(5, round(0.1 * nrow(coords_all)))
@@ -391,7 +469,14 @@ init_potential_params_hdbscan <- function(data, coords = c("Y1", "Y2"),
     solve(cov(coords_all[hdb$cluster == cl, , drop = FALSE]))
   })
 
-  list(x_star = x_star, B = B, alpha = rep(alpha_init, J))
+  out <- list(x_star = x_star, B = B, alpha = rep(alpha_init, J))
+  if (smooth) {
+    track <- data.frame(time = grid_time, coords_all,
+                        cluster = ifelse(hdb$cluster %in% cluster_labels, hdb$cluster, 0L))
+    names(track)[2:3] <- coords
+    attr(out, "smoothed_track") <- track
+  }
+  out
 }
 
 

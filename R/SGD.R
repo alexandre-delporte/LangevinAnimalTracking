@@ -150,6 +150,26 @@
 #'   V2}). Only used when \code{smoothing_method = "CPF"}. If \code{NULL}
 #'   (default), an initial trajectory is drawn via a single FFBS sample before
 #'   the first SGD iteration.
+#' @param preheat_reg A character string giving the regularisation of the
+#'   Fisher information estimate \eqn{I_k} in the pre-heating preconditioner
+#'   \eqn{P_k = (1 - \gamma_k) R_k + \gamma_k I_k}. \code{"trace"} (default,
+#'   Baey et al. 2023): \eqn{R_k = \max(1, \mathrm{tr}(I_k))\, I_p}. The
+#'   step in the direction of parameter \eqn{j} is then scaled by about
+#'   \eqn{I_{jj} / \mathrm{tr}(I_k)}, so parameters with a small Fisher
+#'   information in their units (e.g. potential centres in km) barely move
+#'   when the trace is dominated by a few parameters. \code{"diagonal"}:
+#'   \eqn{R_k = \mathrm{diag}(\max(I_{k,jj}, \epsilon))}, which moves every
+#'   parameter by about \eqn{\gamma_k} times a natural-gradient step, is
+#'   invariant to the units of the parameters, and keeps \eqn{P_k} positive
+#'   definite for \eqn{\gamma_k < 1}. With \code{"diagonal"}, \eqn{I_k} is
+#'   also bias-corrected for the zero initialisation of \code{Delta} (built
+#'   from \eqn{\Delta / w_k}, with \eqn{w_k = 1 - \prod_{j \le k}(1 -
+#'   \gamma_j)}); without this correction \eqn{I_k} is shrunk by
+#'   \eqn{w_k^2} and the first steps are far too large. Both choices give
+#'   \eqn{P_k = I_k} after pre-heating.
+#' @param diag_reg_eps A small positive scalar: with \code{preheat_reg =
+#'   "diagonal"}, the diagonal of \eqn{I_k} is floored at \code{diag_reg_eps}
+#'   times its mean over the free parameters. Default \code{1e-8}.
 #'
 #' @return A named list with the following elements:
 #' \describe{
@@ -187,7 +207,11 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
                        error_params_per_obs = NULL, smoothing_method = "CPF",
                        n_sweeps_cpf = 1,
                        init_trajectory = NULL,
-                       progress_every = 0, label = NULL) {
+                       progress_every = 0, label = NULL,
+                       preheat_reg = c("trace", "diagonal"),
+                       diag_reg_eps = 1e-8) {
+
+  preheat_reg <- match.arg(preheat_reg)
 
   if (split_around_fixed_point) {
     stop("Not implemented yet with splitting around fixed point")
@@ -254,8 +278,9 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
 
   n   <- nrow(data)
   Delta <- matrix(0, ncol = p, nrow = n - 1)
+  Delta_weight <- 0   # total weight of the stochastic approximation Delta
   I_p   <- diag(1, p)
-  
+
   # Heating phase tracking (3rd-order exponential mean filter on gradient vector)
   heating_finished        <- FALSE
   K_end_heating           <- NA
@@ -443,10 +468,26 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
       I_k <- I_k + Delta[i, ] %*% t(Delta[i, ])
     }
     
+    # Bias correction (diagonal regularisation only): Delta starts at 0, so
+    # it is a weighted mean with total weight Delta_weight < 1 and I_k is
+    # shrunk by Delta_weight^2. Delta_weight = 1 from the first iteration
+    # with gamma_k = 1 on, so this only acts during pre-heating.
+    Delta_weight <- (1 - gamma_k) * Delta_weight + gamma_k
+    if (preheat_reg == "diagonal") I_k <- I_k / Delta_weight^2
+
     # Preconditioner: stabilised during pre-heating, raw FIM estimate after
     if (k < K_preheat) {
-      r_k <- max(1, sum(diag(I_k)))
-      P_k <- (1 - gamma_k) * r_k * I_p + gamma_k * I_k
+      if (preheat_reg == "trace") {
+        r_k <- max(1, sum(diag(I_k)))
+        P_k <- (1 - gamma_k) * r_k * I_p + gamma_k * I_k
+      } else {
+        # Diagonal of I_k, floored so that P_k is positive definite:
+        # lambda_min(P_k) >= (1 - gamma_k) * floor > 0
+        d_k <- diag(I_k)
+        free_d <- d_k[setdiff(seq_len(p), fix_idx)]
+        d_floor <- diag_reg_eps * max(mean(free_d), .Machine$double.eps)
+        P_k <- (1 - gamma_k) * diag(pmax(d_k, d_floor), p) + gamma_k * I_k
+      }
     } else {
       P_k <- I_k
     }

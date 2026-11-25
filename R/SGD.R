@@ -108,6 +108,16 @@
 #'   learning rate in the decreasing phase: \eqn{\gamma_k = (k -
 #'   K_{\text{end-heating}})^{-\alpha_{\text{decay}}}}. Must satisfy \eqn{\alpha_{\text{decay}} > 1/2} to
 #'   ensure \eqn{\sum \gamma_k^2 < \infty}. Default \code{2/3}.
+#' @param gamma_max A scalar in \eqn{(0, 1]}: the learning rate of every phase
+#'   is capped, \eqn{\gamma_k \leftarrow \min(\gamma_k, \gamma_{\max})}, in
+#'   both the parameter step and the stochastic approximation of the Fisher
+#'   information. With \code{gamma_max < 1}, the heating phase takes damped
+#'   steps (\eqn{\gamma_{\max}} times a natural-gradient step) and the
+#'   Fisher information is an exponential moving average over about
+#'   \eqn{1/\gamma_{\max}} iterations instead of the single latest smoothed
+#'   trajectory, which avoids huge steps along weakly identified directions
+#'   at the end of pre-heating. Default \code{1} (no cap, as in Baey et al.
+#'   2023).
 #' @param C_heating A small positive scalar giving the smoothing constant of
 #'   the 3rd-order exponential mean filter (three exponential means in
 #'   cascade) applied to the gradient vector during the heating phase. The
@@ -203,7 +213,8 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
                        num_particles_decay_iter = SGD_iter,
                        split_around_fixed_point = FALSE,
                        verbose = FALSE, gamma0 = 1e-4, K_preheat = 1000,
-                       alpha_decay = 2/3, C_heating = 1/100, n_smooth_samples = 0,
+                       alpha_decay = 2/3, gamma_max = 1,
+                       C_heating = 1/100, n_smooth_samples = 0,
                        error_params_per_obs = NULL, smoothing_method = "CPF",
                        n_sweeps_cpf = 1,
                        init_trajectory = NULL,
@@ -212,6 +223,10 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
                        diag_reg_eps = 1e-8) {
 
   preheat_reg <- match.arg(preheat_reg)
+  if (!is.numeric(gamma_max) || length(gamma_max) != 1 ||
+      !(gamma_max > 0 && gamma_max <= 1)) {
+    stop("gamma_max must be a single number in (0, 1]")
+  }
 
   if (split_around_fixed_point) {
     stop("Not implemented yet with splitting around fixed point")
@@ -459,6 +474,10 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
       # Phase 3: Robbins-Monro decrease
       gamma_k <- (k - K_end_heating)^(-alpha_decay)
     }
+    # Optional cap (gamma_max = 1: none). It also applies to the Fisher
+    # information update below, which becomes a moving average over about
+    # 1 / gamma_max iterations instead of the latest trajectory only.
+    gamma_k <- min(gamma_k, gamma_max)
     if (verbose) message("gamma_k: ", gamma_k, "\n")
     
     # Stochastic approximation update of Delta and Fisher matrix estimate
@@ -471,7 +490,8 @@ SGD_Fisher <- function(data, sde_params, fixpar = NULL, SGD_iter = 2000,
     # Bias correction (diagonal regularisation only): Delta starts at 0, so
     # it is a weighted mean with total weight Delta_weight < 1 and I_k is
     # shrunk by Delta_weight^2. Delta_weight = 1 from the first iteration
-    # with gamma_k = 1 on, so this only acts during pre-heating.
+    # with gamma_k = 1 on (with gamma_max < 1 it tends to 1 geometrically),
+    # so this only matters during pre-heating.
     Delta_weight <- (1 - gamma_k) * Delta_weight + gamma_k
     if (preheat_reg == "diagonal") I_k <- I_k / Delta_weight^2
 

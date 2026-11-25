@@ -34,7 +34,9 @@ SGD_Fisher(
   n_sweeps_cpf = 1,
   init_trajectory = NULL,
   progress_every = 0,
-  label = NULL
+  label = NULL,
+  preheat_reg = c("trace", "diagonal"),
+  diag_reg_eps = 1e-08
 )
 }
 \arguments{
@@ -206,6 +208,28 @@ messages).}
 \item{label}{An optional character string prepended to the progress
 messages, e.g. \code{"seed 42"}, to tell apart replicates run in
 parallel. Default \code{NULL}.}
+
+\item{preheat_reg}{A character string giving the regularisation of the
+Fisher information estimate \eqn{I_k} in the pre-heating preconditioner
+\eqn{P_k = (1 - \gamma_k) R_k + \gamma_k I_k}. \code{"trace"} (default,
+Baey et al. 2023): \eqn{R_k = \max(1, \mathrm{tr}(I_k))\, I_p}. The
+step in the direction of parameter \eqn{j} is then scaled by about
+\eqn{I_{jj} / \mathrm{tr}(I_k)}, so parameters with a small Fisher
+information in their units (e.g. potential centres in km) barely move
+when the trace is dominated by a few parameters. \code{"diagonal"}:
+\eqn{R_k = \mathrm{diag}(\max(I_{k,jj}, \epsilon))}, which moves every
+parameter by about \eqn{\gamma_k} times a natural-gradient step, is
+invariant to the units of the parameters, and keeps \eqn{P_k} positive
+definite for \eqn{\gamma_k < 1}. With \code{"diagonal"}, \eqn{I_k} is
+also bias-corrected for the zero initialisation of \code{Delta} (built
+from \eqn{\Delta / w_k}, with \eqn{w_k = 1 - \prod_{j \le k}(1 -
+\gamma_j)}); without this correction \eqn{I_k} is shrunk by
+\eqn{w_k^2} and the first steps are far too large. Both choices give
+\eqn{P_k = I_k} after pre-heating.}
+
+\item{diag_reg_eps}{A small positive scalar: with \code{preheat_reg =
+"diagonal"}, the diagonal of \eqn{I_k} is floored at \code{diag_reg_eps}
+times its mean over the free parameters. Default \code{1e-8}.}
 }
 \value{
 A named list with the following elements:
